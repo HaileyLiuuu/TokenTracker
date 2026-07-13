@@ -33,17 +33,29 @@ final class UsageModel: ObservableObject {
     }
 
     private let settings: SettingsStore
+    private let claudeClient: ClaudeUsageClient
     private var timer: Timer?
     private var lastRefreshCompletedAt: Date?
 
-    init(settings: SettingsStore = SettingsStore()) {
+    init(
+        settings: SettingsStore = SettingsStore(),
+        claudeClient: ClaudeUsageClient = ClaudeUsageClient()
+    ) {
         self.settings = settings
+        self.claudeClient = claudeClient
         primaryProvider = settings.primaryProvider
         language = settings.language
     }
 
     func state(for provider: ProviderID) -> ProviderState {
         states[provider] ?? .loading
+    }
+
+    func refreshManually() {
+        if states[.claude]?.failure == .loginExpired {
+            claudeClient.reloadCredentialOnNextFetch()
+        }
+        refresh()
     }
 
     func refresh() {
@@ -56,10 +68,11 @@ final class UsageModel: ObservableObject {
         }
 
         let home = FileManager.default.homeDirectoryForCurrentUser
+        let claudeClient = claudeClient
         Task {
             await withTaskGroup(of: (ProviderID, ProviderState).self) { group in
                 group.addTask { (.codex, await Self.loadCodex(home: home)) }
-                group.addTask { (.claude, await Self.loadClaude(home: home)) }
+                group.addTask { (.claude, await Self.loadClaude(home: home, client: claudeClient)) }
                 for await (provider, state) in group {
                     states[provider] = state
                 }
@@ -130,9 +143,9 @@ final class UsageModel: ObservableObject {
         }.value
     }
 
-    private static func loadClaude(home: URL) async -> ProviderState {
+    private static func loadClaude(home: URL, client: ClaudeUsageClient) async -> ProviderState {
         do {
-            let snapshot = try await ClaudeUsageClient().fetch()
+            let snapshot = try await client.fetch()
             let cutoff = snapshot.weekly.startsAt ?? Date().addingTimeInterval(-7 * 86_400)
             let tokens = await Task.detached(priority: .utility) {
                 LocalTokenScanner.claudeTokens(
@@ -142,6 +155,7 @@ final class UsageModel: ObservableObject {
             }.value
             return ProviderState(snapshot: snapshot, localTokens: tokens, failure: nil)
         } catch ProviderClientError.claudeCredentialMissing,
+                ProviderClientError.claudeCredentialInvalid,
                 ProviderClientError.claudeLoginExpired {
             let tokens = await recentClaudeTokens(home: home)
             return ProviderState(snapshot: nil, localTokens: tokens, failure: .loginExpired)

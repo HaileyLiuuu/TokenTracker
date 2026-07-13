@@ -17,5 +17,6 @@ A native macOS menu-bar app that keeps Codex and Claude Code plan usage visible 
 1. The Codex Usage-screen payload and Claude payload normalize into the same `UsageSnapshot` public type.
 2. Primary-provider and language settings persist and drive user-visible labels.
 3. Local Codex and Claude logs produce a bounded local-token total without decoding, retaining, or transmitting prompt fields.
+4. A Claude usage client reads Keychain credentials at most once per app session unless the user explicitly retries after an authentication failure.
 
 The menu-bar hover interaction and rendered layout are verified in the packaged app because they cross AppKit window-system boundaries.

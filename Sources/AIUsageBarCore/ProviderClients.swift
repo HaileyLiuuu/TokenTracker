@@ -6,6 +6,7 @@ public enum ProviderClientError: LocalizedError {
     case codexLoginExpired
     case codexUnavailable(String)
     case claudeCredentialMissing
+    case claudeCredentialInvalid
     case claudeLoginExpired
     case claudeUnavailable(String)
 
@@ -19,6 +20,8 @@ public enum ProviderClientError: LocalizedError {
             "Codex usage is unavailable: \(message)"
         case .claudeCredentialMissing:
             "Claude Code is not signed in."
+        case .claudeCredentialInvalid:
+            "Claude Code credentials are invalid."
         case .claudeLoginExpired:
             "Claude Code sign-in has expired."
         case let .claudeUnavailable(message):
@@ -99,10 +102,12 @@ public struct FileCodexCredentialReader: CodexCredentialReading {
     }
 }
 
-public final class ClaudeUsageClient {
+public final class ClaudeUsageClient: @unchecked Sendable {
     private let credentialReader: ClaudeCredentialReading
     private let session: URLSession
     private let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    private let credentialLock = NSLock()
+    private var credentialCache: ClaudeCredentialCache = .unread
 
     public init(
         credentialReader: ClaudeCredentialReading = KeychainClaudeCredentialReader(),
@@ -113,7 +118,7 @@ public final class ClaudeUsageClient {
     }
 
     public func fetch() async throws -> UsageSnapshot {
-        let credential = try credentialReader.read()
+        let credential = try credential()
         if let expiresAt = credential.expiresAt, expiresAt <= Date() {
             throw ProviderClientError.claudeLoginExpired
         }
@@ -137,6 +142,44 @@ public final class ClaudeUsageClient {
         }
         return try ClaudeUsageParser.parse(data: data)
     }
+
+    public func reloadCredentialOnNextFetch() {
+        credentialLock.withLock {
+            credentialCache = .unread
+        }
+    }
+
+    private func credential() throws -> ClaudeCredential {
+        try credentialLock.withLock {
+            switch credentialCache {
+            case .unread:
+                break
+            case let .loaded(credential):
+                return credential
+            case let .failed(error):
+                throw error
+            }
+
+            do {
+                let credential = try credentialReader.read()
+                credentialCache = .loaded(credential)
+                return credential
+            } catch let error as ProviderClientError {
+                credentialCache = .failed(error)
+                throw error
+            } catch {
+                let error = ProviderClientError.claudeCredentialInvalid
+                credentialCache = .failed(error)
+                throw error
+            }
+        }
+    }
+}
+
+private enum ClaudeCredentialCache {
+    case unread
+    case loaded(ClaudeCredential)
+    case failed(ProviderClientError)
 }
 
 public struct ClaudeCredential: Sendable {

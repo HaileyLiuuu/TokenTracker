@@ -19,7 +19,7 @@ struct UsagePopoverView: View {
                 }
                 Spacer()
                 Button {
-                    model.refresh()
+                    model.refreshManually()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -60,7 +60,7 @@ struct UsagePopoverView: View {
             }
 
             HStack {
-                Button(language.text(.refresh)) { model.refresh() }
+                Button(language.text(.refresh)) { model.refreshManually() }
                     .disabled(model.isRefreshing)
                 Spacer()
                 Button(language.text(.quit)) { NSApplication.shared.terminate(nil) }

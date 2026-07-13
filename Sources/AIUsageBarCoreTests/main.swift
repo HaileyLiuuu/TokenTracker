@@ -14,6 +14,9 @@ enum CoreTestRunner {
             ("Codex uses the Usage screen payload as source of truth", { try testCodexUsageScreenParsing() }),
             ("Codex client requests the Usage screen endpoint", { try await testCodexUsageScreenClient() }),
             ("Claude utilization remains on the provider's 0-100 scale", { try testClaudeParsing() }),
+            ("Claude client reuses Keychain credentials across refreshes", { try await testClaudeCredentialReuse() }),
+            ("Claude client does not repeat a denied Keychain read", { try await testClaudeCredentialDenial() }),
+            ("Claude client does not repeat an invalid Keychain read", { try await testClaudeInvalidCredential() }),
             ("Percentages clamp", { try testClamping() }),
             ("Codex local tokens use the requested window", { try testCodexTokens() }),
             ("Claude local tokens de-duplicate messages", { try testClaudeTokens() }),
@@ -71,6 +74,82 @@ enum CoreTestRunner {
         try expect(snapshot.weekly.remainingPercent == 99.58, "remaining percent")
         try expect(snapshot.weekly.durationMinutes == 10_080, "duration")
         try expect(snapshot.weekly.resetAt == ISO8601DateFormatter().date(from: "2026-07-20T08:00:00Z"), "reset")
+    }
+
+    private static func testClaudeCredentialReuse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let credentialReader = CountingClaudeCredentialReader { _ in
+            ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+        }
+        let client = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            session: URLSession(configuration: configuration)
+        )
+
+        _ = try await client.fetch()
+        _ = try await client.fetch()
+
+        try expect(
+            credentialReader.readCount == 1,
+            "two automatic refreshes should access Keychain once, got \(credentialReader.readCount)"
+        )
+    }
+
+    private static func testClaudeCredentialDenial() async throws {
+        let credentialReader = CountingClaudeCredentialReader { _ in
+            throw ProviderClientError.claudeCredentialMissing
+        }
+        let client = ClaudeUsageClient(credentialReader: credentialReader)
+
+        for _ in 0 ..< 2 {
+            do {
+                _ = try await client.fetch()
+                throw TestFailure(description: "denied credential read should fail")
+            } catch ProviderClientError.claudeCredentialMissing {
+                // Expected.
+            }
+        }
+        try expect(credentialReader.readCount == 1, "denied Keychain access should not be retried automatically")
+
+        client.reloadCredentialOnNextFetch()
+        do {
+            _ = try await client.fetch()
+            throw TestFailure(description: "reloaded denied credential read should fail")
+        } catch ProviderClientError.claudeCredentialMissing {
+            // Expected.
+        }
+        try expect(credentialReader.readCount == 2, "explicit reload should permit one new Keychain read")
+    }
+
+    private static func testClaudeInvalidCredential() async throws {
+        let credentialReader = CountingClaudeCredentialReader { readNumber in
+            if readNumber == 1 {
+                throw TestFailure(description: "invalid credential JSON")
+            }
+            return ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let client = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            session: URLSession(configuration: configuration)
+        )
+
+        for _ in 0 ..< 2 {
+            do {
+                _ = try await client.fetch()
+                throw TestFailure(description: "invalid credential should fail")
+            } catch ProviderClientError.claudeCredentialInvalid {
+                // Expected.
+            }
+        }
+        try expect(credentialReader.readCount == 1, "invalid Keychain data should not be reread automatically")
+
+        client.reloadCredentialOnNextFetch()
+        let snapshot = try await client.fetch()
+        try expect(credentialReader.readCount == 2, "explicit reload should reread corrected Keychain data")
+        try expect(snapshot.weekly.usedPercent == 0.42, "explicit reload should recover Claude usage")
     }
 
     private static func testClamping() throws {
@@ -164,6 +243,28 @@ private struct MockCodexCredentialReader: CodexCredentialReading {
     }
 }
 
+private final class CountingClaudeCredentialReader: ClaudeCredentialReading, @unchecked Sendable {
+    private let lock = NSLock()
+    private let readCredential: @Sendable (Int) throws -> ClaudeCredential
+    private var count = 0
+
+    init(readCredential: @escaping @Sendable (Int) throws -> ClaudeCredential) {
+        self.readCredential = readCredential
+    }
+
+    var readCount: Int {
+        lock.withLock { count }
+    }
+
+    func read() throws -> ClaudeCredential {
+        let readNumber = lock.withLock {
+            count += 1
+            return count
+        }
+        return try readCredential(readNumber)
+    }
+}
+
 private final class MockCodexUsageURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
 
@@ -178,6 +279,31 @@ private final class MockCodexUsageURLProtocol: URLProtocol, @unchecked Sendable 
             && request.value(forHTTPHeaderField: "ChatGPT-Account-ID") == "test-account"
         let statusCode = isCorrectRequest ? 200 : 400
         let payload = #"{"rate_limit":{"primary_window":{"used_percent":21,"limit_window_seconds":604800,"reset_at":1784512550},"secondary_window":null}}"#
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(payload.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class MockClaudeUsageURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let isCorrectRequest = request.url?.host == "api.anthropic.com"
+            && request.url?.path == "/api/oauth/usage"
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token"
+        let statusCode = isCorrectRequest ? 200 : 400
+        let payload = #"{"seven_day":{"utilization":0.42,"resets_at":"2026-07-20T08:00:00Z"}}"#
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
