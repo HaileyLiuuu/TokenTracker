@@ -10,6 +10,8 @@ final class StatusItemController: NSObject {
     private let popover = NSPopover()
     private var trackingArea: NSTrackingArea?
     private var cancellable: AnyCancellable?
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
 
     init(model: UsageModel) {
         self.model = model
@@ -18,6 +20,7 @@ final class StatusItemController: NSObject {
 
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentSize = NSSize(width: 370, height: 610)
         popover.contentViewController = NSHostingController(rootView: UsagePopoverView(model: model))
 
@@ -52,7 +55,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func togglePopover() {
-        popover.isShown ? popover.performClose(nil) : showPopover()
+        popover.isShown ? closePopover() : showPopover()
     }
 
     @objc func mouseEntered(with event: NSEvent) {
@@ -63,6 +66,46 @@ final class StatusItemController: NSObject {
         guard !popover.isShown, let button = statusItem.button else { return }
         model.refreshIfStale()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        startOutsideClickMonitoring()
+    }
+
+    private func closePopover() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+        stopOutsideClickMonitoring()
+    }
+
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+        let mouseDownEvents: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseDownEvents) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+            let eventWindow = event.window
+            let popoverWindow = self.popover.contentViewController?.view.window
+            let statusItemWindow = self.statusItem.button?.window
+            if eventWindow !== popoverWindow, eventWindow !== statusItemWindow {
+                self.closePopover()
+            }
+            return event
+        }
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseDownEvents) { [weak self] _ in
+            Task { @MainActor in
+                self?.closePopover()
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
+        }
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+            self.globalClickMonitor = nil
+        }
     }
 
     private func updateStatusImage() {
@@ -76,6 +119,12 @@ final class StatusItemController: NSObject {
         statusItem.button?.setAccessibilityLabel(
             "\(provider.displayName) \(state.snapshot.map { "\(Int($0.weekly.remainingPercent.rounded())) percent remaining" } ?? "unavailable")"
         )
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        stopOutsideClickMonitoring()
     }
 }
 

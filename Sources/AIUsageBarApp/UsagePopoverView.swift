@@ -131,7 +131,7 @@ private struct ProviderCard: View {
                 Text(language.text(.loading))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else {
+            } else if let failureText {
                 Label(failureText, systemImage: "exclamationmark.triangle")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -150,7 +150,7 @@ private struct ProviderCard: View {
         state.snapshot.map { "\(Int($0.weekly.remainingPercent.rounded()))%" } ?? "—"
     }
 
-    private var failureText: String {
+    private var failureText: String? {
         switch state.failure {
         case .codexLoginExpired:
             language.text(.reconnectCodex)
@@ -159,9 +159,9 @@ private struct ProviderCard: View {
         case .codexUnavailable:
             language.text(.codexUnavailable)
         case .claudeUnavailable:
-            language.text(.claudeUnavailable)
+            nil
         case nil:
-            language.text(.notAvailable)
+            nil
         }
     }
 
