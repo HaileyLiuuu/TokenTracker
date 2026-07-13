@@ -70,17 +70,17 @@ final class StatusItemController: NSObject {
         let state = model.state(for: provider)
         statusItem.button?.image = MeterImageRenderer.image(
             provider: provider,
-            usedPercent: state.snapshot?.weekly.usedPercent,
+            remainingPercent: state.snapshot?.weekly.remainingPercent,
             isStale: state.failure != nil
         )
         statusItem.button?.setAccessibilityLabel(
-            "\(provider.displayName) \(state.snapshot.map { "\(Int($0.weekly.usedPercent.rounded())) percent used" } ?? "unavailable")"
+            "\(provider.displayName) \(state.snapshot.map { "\(Int($0.weekly.remainingPercent.rounded())) percent remaining" } ?? "unavailable")"
         )
     }
 }
 
 private enum MeterImageRenderer {
-    static func image(provider: ProviderID, usedPercent: Double?, isStale: Bool) -> NSImage {
+    static func image(provider: ProviderID, remainingPercent: Double?, isStale: Bool) -> NSImage {
         let size = NSSize(width: 72, height: 20)
         let image = NSImage(size: size, flipped: false) { rect in
             let alpha: CGFloat = isStale ? 0.55 : 1
@@ -99,8 +99,8 @@ private enum MeterImageRenderer {
             trackColor.setFill()
             track.fill()
 
-            if let usedPercent {
-                let width = 28 * min(max(usedPercent, 0), 100) / 100
+            if let remainingPercent {
+                let width = 28 * min(max(remainingPercent, 0), 100) / 100
                 if width > 0 {
                     let fill = NSBezierPath(roundedRect: NSRect(x: 13, y: 7, width: width, height: 6), xRadius: 3, yRadius: 3)
                     fillColor.setFill()
@@ -108,7 +108,7 @@ private enum MeterImageRenderer {
                 }
             }
 
-            let percentage = usedPercent.map { "\(Int($0.rounded()))%" } ?? "--"
+            let percentage = remainingPercent.map { "\(Int($0.rounded()))%" } ?? "--"
             let percentageAttributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
                 .foregroundColor: labelColor,

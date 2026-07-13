@@ -6,7 +6,7 @@ A native macOS menu-bar app that keeps Codex and Claude Code plan usage visible 
 
 ## Domain vocabulary
 
-- **Primary provider**: Codex or Claude Code, chosen by the user, whose used percentage appears in the menu bar.
+- **Primary provider**: Codex or Claude Code, chosen by the user, whose remaining percentage appears in the menu bar.
 - **Usage window**: a provider-reported quota window with a used percentage and reset time.
 - **Remaining percentage**: `100 - used percentage`, clamped to 0...100.
 - **Local tokens**: tokens found in local JSONL logs during the provider's current weekly window. This is not presented as an account-wide provider total.

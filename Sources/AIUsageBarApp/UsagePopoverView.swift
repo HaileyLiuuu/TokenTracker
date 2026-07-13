@@ -101,19 +101,19 @@ private struct ProviderCard: View {
                 Spacer()
                 if state.isLoading {
                     ProgressView().controlSize(.small)
-                } else if let snapshot = state.snapshot {
-                    Text("\(Int(snapshot.weekly.usedPercent.rounded()))%")
+                } else if state.snapshot != nil {
+                    Text(remainingPercentageText)
                         .font(.system(.body, design: .rounded, weight: .semibold))
                 }
             }
 
-            ProgressView(value: state.snapshot?.weekly.usedPercent ?? 0, total: 100)
+            ProgressView(value: state.snapshot?.weekly.remainingPercent ?? 0, total: 100)
                 .tint(provider.swiftUIAccent)
                 .opacity(state.snapshot == nil ? 0.4 : 1)
 
             metricRow(
                 language.text(.remaining),
-                state.snapshot.map { "\(Int($0.weekly.remainingPercent.rounded()))%" } ?? "—"
+                remainingPercentageText
             )
             metricRow(language.text(.resets), formattedReset(state.snapshot?.weekly.resetAt))
             metricRow(language.text(.localTokens), formattedTokens(state.localTokens))
@@ -144,6 +144,10 @@ private struct ProviderCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
         )
+    }
+
+    private var remainingPercentageText: String {
+        state.snapshot.map { "\(Int($0.weekly.remainingPercent.rounded()))%" } ?? "—"
     }
 
     private var failureText: String {
