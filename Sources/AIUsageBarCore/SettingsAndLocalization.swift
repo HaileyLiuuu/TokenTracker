@@ -43,6 +43,8 @@ public enum AppLanguage: String, Codable, CaseIterable, Identifiable, Sendable {
         case (.english, .notAvailable): "Unavailable"
         case (.chinese, .reconnectClaude): "请先在 Claude Code 中重新登录"
         case (.english, .reconnectClaude): "Sign in to Claude Code again"
+        case (.chinese, .reconnectCodex): "请先在 Codex 中重新登录"
+        case (.english, .reconnectCodex): "Sign in to Codex again"
         case (.chinese, .codexUnavailable): "暂时无法读取 Codex 用量"
         case (.english, .codexUnavailable): "Codex usage is temporarily unavailable"
         case (.chinese, .claudeUnavailable): "暂时无法读取 Claude Code 用量"
@@ -68,6 +70,7 @@ public enum TextKey: Sendable {
     case loading
     case notAvailable
     case reconnectClaude
+    case reconnectCodex
     case codexUnavailable
     case claudeUnavailable
     case providerData

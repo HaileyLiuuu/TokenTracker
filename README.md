@@ -9,11 +9,11 @@
 - 面板同时显示 Codex 和 Claude Code 的剩余百分比、下次重置时间及本机 7 天 Token。
 - 可选择 Codex 或 Claude Code 作为主显示项。
 - 可在中文和英文之间切换。
-- 每 5 分钟自动刷新，也可以手动刷新。
+- 每分钟自动刷新；悬停打开时如果数据超过 30 秒会刷新，也可以手动刷新。
 
 ## 数据来源
 
-- **Codex 配额**：通过本机 Codex CLI 自带的 `app-server` 读取，与 Codex 的 account rate-limit 数据同源。
+- **Codex 配额**：读取本机 `~/.codex/auth.json` 的现有登录态，请求 Codex Usage 页面自身使用的 `/backend-api/wham/usage` 接口。应用不会保存令牌，也不会把令牌发送给 OpenAI 之外的服务。
 - **Claude Code 配额**：读取 macOS Keychain 中现有的 `Claude Code-credentials` 登录态，并请求 Claude Code 自身使用的 usage 接口。应用不会保存令牌。
 - **Token**：从 `~/.codex` 和 `~/.claude` 的本机 JSONL 日志统计，并明确标为“本机 7 天 Token”；它不是跨设备的官方账户 Token 总量。
 
@@ -39,7 +39,7 @@ dist/AIUsageBar.app
 swift run AIUsageBarCoreTests
 ```
 
-包含真实 Codex app-server 的集成测试：
+包含 Codex Usage 页面同源接口的真实集成测试：
 
 ```bash
 AIUSAGEBAR_LIVE_TESTS=1 swift run AIUsageBarCoreTests

@@ -4,6 +4,7 @@ import Foundation
 
 struct ProviderState: Sendable {
     enum Failure: Sendable {
+        case codexLoginExpired
         case loginExpired
         case codexUnavailable
         case claudeUnavailable
@@ -33,6 +34,7 @@ final class UsageModel: ObservableObject {
 
     private let settings: SettingsStore
     private var timer: Timer?
+    private var lastRefreshCompletedAt: Date?
 
     init(settings: SettingsStore = SettingsStore()) {
         self.settings = settings
@@ -63,12 +65,23 @@ final class UsageModel: ObservableObject {
                 }
             }
             isRefreshing = false
+            lastRefreshCompletedAt = Date()
+        }
+    }
+
+    func refreshIfStale(maxAge: TimeInterval = 30) {
+        guard let lastRefreshCompletedAt else {
+            refresh()
+            return
+        }
+        if Date().timeIntervalSince(lastRefreshCompletedAt) >= maxAge {
+            refresh()
         }
     }
 
     func startAutomaticRefresh() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
@@ -76,7 +89,7 @@ final class UsageModel: ObservableObject {
     private static func loadCodex(home: URL) async -> ProviderState {
         await Task.detached(priority: .utility) {
             do {
-                let snapshot = try CodexUsageClient().fetch()
+                let snapshot = try await CodexUsageClient().fetch()
                 let cutoff = snapshot.weekly.startsAt ?? Date().addingTimeInterval(-7 * 86_400)
                 let tokens = LocalTokenScanner.codexTokens(
                     in: [
@@ -86,6 +99,20 @@ final class UsageModel: ObservableObject {
                     since: cutoff
                 )
                 return ProviderState(snapshot: snapshot, localTokens: tokens, failure: nil)
+            } catch ProviderClientError.codexCredentialMissing,
+                    ProviderClientError.codexLoginExpired {
+                let tokens = LocalTokenScanner.codexTokens(
+                    in: [
+                        home.appendingPathComponent(".codex/sessions", isDirectory: true),
+                        home.appendingPathComponent(".codex/archived_sessions", isDirectory: true),
+                    ],
+                    since: Date().addingTimeInterval(-7 * 86_400)
+                )
+                return ProviderState(
+                    snapshot: nil,
+                    localTokens: tokens,
+                    failure: .codexLoginExpired
+                )
             } catch {
                 let tokens = LocalTokenScanner.codexTokens(
                     in: [

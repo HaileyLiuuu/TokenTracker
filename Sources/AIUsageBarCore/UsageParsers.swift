@@ -1,51 +1,38 @@
 import Foundation
 
 public enum UsageParsingError: LocalizedError {
-    case malformedCodexResponse
-    case missingCodexWeeklyWindow
+    case missingCodexUsageScreenWeeklyWindow
     case missingClaudeWeeklyWindow
 
     public var errorDescription: String? {
         switch self {
-        case .malformedCodexResponse:
-            "Codex returned an unreadable usage response."
-        case .missingCodexWeeklyWindow:
-            "Codex did not return a weekly usage window."
+        case .missingCodexUsageScreenWeeklyWindow:
+            "The Codex Usage screen did not return a weekly usage window."
         case .missingClaudeWeeklyWindow:
             "Claude Code did not return a weekly usage window."
         }
     }
 }
 
-public enum CodexRateLimitParser {
-    public static func parse(line: String, fetchedAt: Date = Date()) throws -> UsageSnapshot? {
-        guard let data = line.data(using: .utf8) else {
-            throw UsageParsingError.malformedCodexResponse
-        }
-
-        let envelope: CodexEnvelope
-        do {
-            envelope = try JSONDecoder().decode(CodexEnvelope.self, from: data)
-        } catch {
-            return nil
-        }
-        guard envelope.id == 2, let result = envelope.result else { return nil }
-
-        let limits = result.rateLimitsByLimitId?["codex"] ?? result.rateLimits
-        guard let limits else { throw UsageParsingError.missingCodexWeeklyWindow }
-        let candidates = [limits.primary, limits.secondary].compactMap { $0 }
+public enum CodexUsageScreenParser {
+    public static func parse(data: Data, fetchedAt: Date = Date()) throws -> UsageSnapshot {
+        let payload = try JSONDecoder().decode(CodexUsageScreenPayload.self, from: data)
+        let candidates = [
+            payload.rateLimit.primaryWindow,
+            payload.rateLimit.secondaryWindow,
+        ].compactMap { $0 }
         guard let weekly = candidates.max(by: {
-            ($0.windowDurationMins ?? 0) < ($1.windowDurationMins ?? 0)
+            ($0.limitWindowSeconds ?? 0) < ($1.limitWindowSeconds ?? 0)
         }) else {
-            throw UsageParsingError.missingCodexWeeklyWindow
+            throw UsageParsingError.missingCodexUsageScreenWeeklyWindow
         }
 
         return UsageSnapshot(
             provider: .codex,
             weekly: UsageWindow(
-                usedPercent: Double(weekly.usedPercent),
-                resetAt: weekly.resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-                durationMinutes: weekly.windowDurationMins
+                usedPercent: weekly.usedPercent,
+                resetAt: weekly.resetAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+                durationMinutes: weekly.limitWindowSeconds.map { $0 / 60 }
             ),
             fetchedAt: fetchedAt
         )
@@ -71,25 +58,34 @@ public enum ClaudeUsageParser {
     }
 }
 
-private struct CodexEnvelope: Decodable {
-    let id: Int?
-    let result: CodexResult?
-}
+private struct CodexUsageScreenPayload: Decodable {
+    let rateLimit: RateLimit
 
-private struct CodexResult: Decodable {
-    let rateLimits: CodexLimits?
-    let rateLimitsByLimitId: [String: CodexLimits]?
-}
+    enum CodingKeys: String, CodingKey {
+        case rateLimit = "rate_limit"
+    }
 
-private struct CodexLimits: Decodable {
-    let primary: CodexWindow?
-    let secondary: CodexWindow?
-}
+    struct RateLimit: Decodable {
+        let primaryWindow: Window?
+        let secondaryWindow: Window?
 
-private struct CodexWindow: Decodable {
-    let usedPercent: Int
-    let windowDurationMins: Int?
-    let resetsAt: Int?
+        enum CodingKeys: String, CodingKey {
+            case primaryWindow = "primary_window"
+            case secondaryWindow = "secondary_window"
+        }
+    }
+
+    struct Window: Decodable {
+        let usedPercent: Double
+        let limitWindowSeconds: Int?
+        let resetAt: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case usedPercent = "used_percent"
+            case limitWindowSeconds = "limit_window_seconds"
+            case resetAt = "reset_at"
+        }
+    }
 }
 
 private struct ClaudePayload: Decodable {

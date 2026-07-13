@@ -8,24 +8,26 @@ struct TestFailure: Error, CustomStringConvertible {
 
 @main
 enum CoreTestRunner {
-    static func main() throws {
-        var tests: [(String, () throws -> Void)] = [
-            ("Codex weekly response normalizes", testCodexParsing),
-            ("Claude utilization remains on the provider's 0-100 scale", testClaudeParsing),
-            ("Percentages clamp", testClamping),
-            ("Codex local tokens use the requested window", testCodexTokens),
-            ("Claude local tokens de-duplicate messages", testClaudeTokens),
-            ("Oversized prompt records do not break token scanning", testOversizedRecord),
-            ("Settings and language persist", testSettings),
+    static func main() async throws {
+        typealias AsyncTest = () async throws -> Void
+        var tests: [(String, AsyncTest)] = [
+            ("Codex uses the Usage screen payload as source of truth", { try testCodexUsageScreenParsing() }),
+            ("Codex client requests the Usage screen endpoint", { try await testCodexUsageScreenClient() }),
+            ("Claude utilization remains on the provider's 0-100 scale", { try testClaudeParsing() }),
+            ("Percentages clamp", { try testClamping() }),
+            ("Codex local tokens use the requested window", { try testCodexTokens() }),
+            ("Claude local tokens de-duplicate messages", { try testClaudeTokens() }),
+            ("Oversized prompt records do not break token scanning", { try testOversizedRecord() }),
+            ("Settings and language persist", { try testSettings() }),
         ]
         if ProcessInfo.processInfo.environment["AIUSAGEBAR_LIVE_TESTS"] == "1" {
-            tests.append(("Live Codex app-server returns weekly usage", testLiveCodex))
+            tests.append(("Live Codex Usage screen endpoint returns weekly usage", { try await testLiveCodex() }))
         }
 
         var failures: [String] = []
         for (name, test) in tests {
             do {
-                try test()
+                try await test()
                 print("✓ \(name)")
             } catch {
                 failures.append("✗ \(name): \(error)")
@@ -40,16 +42,25 @@ enum CoreTestRunner {
         print("\n\(tests.count) tests passed")
     }
 
-    private static func testCodexParsing() throws {
-        let json = #"{"id":2,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":17,"windowDurationMins":10080,"resetsAt":1784512550},"secondary":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":17,"windowDurationMins":10080,"resetsAt":1784512550}}}}}"#
-        guard let snapshot = try CodexRateLimitParser.parse(line: json) else {
-            throw TestFailure(description: "No snapshot")
-        }
+    private static func testCodexUsageScreenParsing() throws {
+        let json = #"{"plan_type":"prolite","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{"used_percent":21,"limit_window_seconds":604800,"reset_at":1784512550},"secondary_window":null}}"#
+        let snapshot = try CodexUsageScreenParser.parse(data: Data(json.utf8))
         try expect(snapshot.provider == .codex, "provider")
-        try expect(snapshot.weekly.usedPercent == 17, "used percent")
-        try expect(snapshot.weekly.remainingPercent == 83, "remaining percent")
-        try expect(snapshot.weekly.durationMinutes == 10_080, "duration")
-        try expect(snapshot.weekly.resetAt == Date(timeIntervalSince1970: 1_784_512_550), "reset")
+        try expect(snapshot.weekly.usedPercent == 21, "Usage screen used percent")
+        try expect(snapshot.weekly.remainingPercent == 79, "Usage screen remaining percent")
+        try expect(snapshot.weekly.durationMinutes == 10_080, "weekly duration")
+    }
+
+    private static func testCodexUsageScreenClient() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockCodexUsageURLProtocol.self]
+        let client = CodexUsageClient(
+            credentialReader: MockCodexCredentialReader(),
+            session: URLSession(configuration: configuration)
+        )
+        let snapshot = try await client.fetch()
+        try expect(snapshot.weekly.usedPercent == 21, "client used percent")
+        try expect(snapshot.weekly.remainingPercent == 79, "client remaining percent")
     }
 
     private static func testClaudeParsing() throws {
@@ -124,8 +135,8 @@ enum CoreTestRunner {
         try expect(AppLanguage.chinese.text(.remaining) == "剩余", "Chinese label")
     }
 
-    private static func testLiveCodex() throws {
-        let snapshot = try CodexUsageClient().fetch()
+    private static func testLiveCodex() async throws {
+        let snapshot = try await CodexUsageClient().fetch()
         try expect(snapshot.weekly.durationMinutes == 10_080, "weekly duration")
         try expect((0 ... 100).contains(snapshot.weekly.usedPercent), "valid percent")
         try expect(snapshot.weekly.resetAt != nil, "reset time")
@@ -145,4 +156,38 @@ enum CoreTestRunner {
         guard let value else { throw TestFailure(description: message) }
         return value
     }
+}
+
+private struct MockCodexCredentialReader: CodexCredentialReading {
+    func read() throws -> CodexCredential {
+        CodexCredential(accessToken: "test-token", accountID: "test-account")
+    }
+}
+
+private final class MockCodexUsageURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let isCorrectRequest = request.url?.host == "chatgpt.com"
+            && request.url?.path == "/backend-api/wham/usage"
+            && queryItems.contains(URLQueryItem(name: "supports_rewardless_invites", value: "true"))
+            && request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token"
+            && request.value(forHTTPHeaderField: "ChatGPT-Account-ID") == "test-account"
+        let statusCode = isCorrectRequest ? 200 : 400
+        let payload = #"{"rate_limit":{"primary_window":{"used_percent":21,"limit_window_seconds":604800,"reset_at":1784512550},"secondary_window":null}}"#
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(payload.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

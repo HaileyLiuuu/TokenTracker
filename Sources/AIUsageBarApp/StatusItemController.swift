@@ -61,6 +61,7 @@ final class StatusItemController: NSObject {
 
     private func showPopover() {
         guard !popover.isShown, let button = statusItem.button else { return }
+        model.refreshIfStale()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 

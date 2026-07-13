@@ -148,6 +148,8 @@ private struct ProviderCard: View {
 
     private var failureText: String {
         switch state.failure {
+        case .codexLoginExpired:
+            language.text(.reconnectCodex)
         case .loginExpired:
             language.text(.reconnectClaude)
         case .codexUnavailable:

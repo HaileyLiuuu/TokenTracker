@@ -14,7 +14,7 @@ A native macOS menu-bar app that keeps Codex and Claude Code plan usage visible 
 
 ## Confirmed test seams
 
-1. Raw Codex and Claude payloads normalize into the same `UsageSnapshot` public type.
+1. The Codex Usage-screen payload and Claude payload normalize into the same `UsageSnapshot` public type.
 2. Primary-provider and language settings persist and drive user-visible labels.
 3. Local Codex and Claude logs produce a bounded local-token total without decoding, retaining, or transmitting prompt fields.
 

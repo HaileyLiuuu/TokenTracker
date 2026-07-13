@@ -2,8 +2,8 @@ import Foundation
 import Security
 
 public enum ProviderClientError: LocalizedError {
-    case codexNotInstalled
-    case codexTimedOut(String?)
+    case codexCredentialMissing
+    case codexLoginExpired
     case codexUnavailable(String)
     case claudeCredentialMissing
     case claudeLoginExpired
@@ -11,14 +11,10 @@ public enum ProviderClientError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .codexNotInstalled:
-            "Codex CLI is not installed."
-        case let .codexTimedOut(diagnostics):
-            if let diagnostics, !diagnostics.isEmpty {
-                "Codex usage request timed out: \(diagnostics)"
-            } else {
-                "Codex usage request timed out."
-            }
+        case .codexCredentialMissing:
+            "Codex is not signed in."
+        case .codexLoginExpired:
+            "Codex sign-in has expired."
         case let .codexUnavailable(message):
             "Codex usage is unavailable: \(message)"
         case .claudeCredentialMissing:
@@ -32,92 +28,74 @@ public enum ProviderClientError: LocalizedError {
 }
 
 public final class CodexUsageClient {
-    private let executableURL: URL
+    private let credentialReader: CodexCredentialReading
+    private let session: URLSession
+    private let endpoint = URL(
+        string: "https://chatgpt.com/backend-api/wham/usage?supports_rewardless_invites=true"
+    )!
 
-    public init(executableURL: URL? = nil) throws {
-        if let executableURL {
-            self.executableURL = executableURL
-        } else if let discovered = Self.findCodexExecutable() {
-            self.executableURL = discovered
-        } else {
-            throw ProviderClientError.codexNotInstalled
-        }
+    public init(
+        credentialReader: CodexCredentialReading = FileCodexCredentialReader(),
+        session: URLSession = .shared
+    ) {
+        self.credentialReader = credentialReader
+        self.session = session
     }
 
-    public func fetch(timeout: TimeInterval = 20) throws -> UsageSnapshot {
-        let process = Process()
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.executableURL = executableURL
-        process.arguments = ["app-server"]
-        process.standardInput = inputPipe
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+    public func fetch() async throws -> UsageSnapshot {
+        let credential = try credentialReader.read()
+        var request = URLRequest(url: endpoint)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(credential.accountID, forHTTPHeaderField: "ChatGPT-Account-ID")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("aiusagebar/0.1.0", forHTTPHeaderField: "User-Agent")
 
-        let response = ResponseBox()
-        let diagnostics = DiagnosticBuffer()
-        let semaphore = DispatchSemaphore(value: 0)
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            response.append(data) { line in
-                do {
-                    if let snapshot = try CodexRateLimitParser.parse(line: line) {
-                        response.finish(.success(snapshot))
-                        semaphore.signal()
-                    }
-                } catch {
-                    response.finish(.failure(error))
-                    semaphore.signal()
-                }
-            }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ProviderClientError.codexUnavailable("invalid response")
         }
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty { diagnostics.append(data) }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw ProviderClientError.codexLoginExpired
         }
-
-        do {
-            try process.run()
-        } catch {
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
-            throw ProviderClientError.codexUnavailable(error.localizedDescription)
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw ProviderClientError.codexUnavailable("HTTP \(http.statusCode)")
         }
+        return try CodexUsageScreenParser.parse(data: data)
+    }
+}
 
-        let requests = [
-            #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"aiusagebar","version":"0.1.0"},"capabilities":{"experimentalApi":true}}}"#,
-            #"{"method":"initialized"}"#,
-            #"{"id":2,"method":"account/rateLimits/read","params":null}"#,
-        ].joined(separator: "\n") + "\n"
-        inputPipe.fileHandleForWriting.write(Data(requests.utf8))
+public struct CodexCredential: Sendable {
+    public let accessToken: String
+    public let accountID: String
 
-        let waitResult = semaphore.wait(timeout: .now() + timeout)
-        outputPipe.fileHandleForReading.readabilityHandler = nil
-        errorPipe.fileHandleForReading.readabilityHandler = nil
-        try? inputPipe.fileHandleForWriting.close()
-        if process.isRunning { process.terminate() }
+    public init(accessToken: String, accountID: String) {
+        self.accessToken = accessToken
+        self.accountID = accountID
+    }
+}
 
-        guard waitResult == .success else {
-            throw ProviderClientError.codexTimedOut(diagnostics.text)
-        }
-        return try response.result?.get() ?? {
-            throw ProviderClientError.codexUnavailable("empty response")
-        }()
+public protocol CodexCredentialReading: Sendable {
+    func read() throws -> CodexCredential
+}
+
+public struct FileCodexCredentialReader: CodexCredentialReading {
+    private let authFileURL: URL
+
+    public init(authFileURL: URL? = nil) {
+        self.authFileURL = authFileURL
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json")
     }
 
-    private static func findCodexExecutable() -> URL? {
-        var candidates: [String] = []
-        if let configured = ProcessInfo.processInfo.environment["CODEX_BIN"], !configured.isEmpty {
-            candidates.append(configured)
+    public func read() throws -> CodexCredential {
+        guard let data = try? Data(contentsOf: authFileURL) else {
+            throw ProviderClientError.codexCredentialMissing
         }
-        candidates.append(contentsOf: [
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/.local/bin/codex",
-        ])
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map(URL.init(fileURLWithPath:))
+        let envelope = try JSONDecoder().decode(CodexCredentialEnvelope.self, from: data)
+        return CodexCredential(
+            accessToken: envelope.tokens.accessToken,
+            accountID: envelope.tokens.accountID
+        )
     }
 }
 
@@ -207,50 +185,16 @@ private struct ClaudeCredentialEnvelope: Decodable {
     }
 }
 
-private final class ResponseBox {
-    private let lock = NSLock()
-    private var buffer = Data()
-    private(set) var result: Result<UsageSnapshot, Error>?
+private struct CodexCredentialEnvelope: Decodable {
+    let tokens: Tokens
 
-    func append(_ data: Data, onLine: (String) -> Void) {
-        lock.lock()
-        buffer.append(data)
-        var lines: [String] = []
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let lineData = buffer[..<newline]
-            buffer.removeSubrange(...newline)
-            if let line = String(data: lineData, encoding: .utf8) {
-                lines.append(line)
-            }
+    struct Tokens: Decodable {
+        let accessToken: String
+        let accountID: String
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case accountID = "account_id"
         }
-        lock.unlock()
-        lines.forEach(onLine)
-    }
-
-    func finish(_ newResult: Result<UsageSnapshot, Error>) {
-        lock.lock()
-        if result == nil { result = newResult }
-        lock.unlock()
-    }
-}
-
-private final class DiagnosticBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private let maximumBytes = 8_192
-    private var buffer = Data()
-
-    func append(_ data: Data) {
-        lock.lock()
-        let remaining = max(maximumBytes - buffer.count, 0)
-        if remaining > 0 { buffer.append(data.prefix(remaining)) }
-        lock.unlock()
-    }
-
-    var text: String? {
-        lock.lock()
-        let value = String(data: buffer, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        lock.unlock()
-        return value?.isEmpty == false ? value : nil
     }
 }
