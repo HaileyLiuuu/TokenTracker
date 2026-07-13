@@ -15,6 +15,16 @@ enum CoreTestRunner {
             ("Codex client requests the Usage screen endpoint", { try await testCodexUsageScreenClient() }),
             ("Claude utilization remains on the provider's 0-100 scale", { try testClaudeParsing() }),
             ("Claude client reuses Keychain credentials across refreshes", { try await testClaudeCredentialReuse() }),
+            ("Claude client throttles repeated usage refreshes", { try await testClaudeRefreshThrottle() }),
+            ("Claude client coalesces concurrent usage refreshes", { try await testClaudeConcurrentRefreshes() }),
+            ("Claude client keeps the last snapshot while rate limited", { try await testClaudeRateLimitFallback() }),
+            ("Claude client honors delta-seconds Retry-After", { try await testClaudeDeltaSecondsRetryAfter() }),
+            ("Claude client starts delta-seconds backoff at response time", { try await testClaudeBackoffStartsAtResponse() }),
+            ("Claude client does not return a snapshot that resets in flight", { try await testClaudeSnapshotResetInFlight() }),
+            ("Claude client honors HTTP-date Retry-After", { try await testClaudeHTTPDateRetryAfter() }),
+            ("Claude client restores the last snapshot after restart", { try await testClaudeSnapshotPersistence() }),
+            ("Claude client expires snapshots without a reset time", { try await testClaudeSnapshotWithoutResetExpires() }),
+            ("Usage snapshot store persists provider data only", { try testUsageSnapshotStore() }),
             ("Claude client does not repeat a denied Keychain read", { try await testClaudeCredentialDenial() }),
             ("Claude client does not repeat an invalid Keychain read", { try await testClaudeInvalidCredential() }),
             ("Percentages clamp", { try testClamping() }),
@@ -77,6 +87,7 @@ enum CoreTestRunner {
     }
 
     private static func testClaudeCredentialReuse() async throws {
+        MockClaudeUsageURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
         let credentialReader = CountingClaudeCredentialReader { _ in
@@ -84,7 +95,8 @@ enum CoreTestRunner {
         }
         let client = ClaudeUsageClient(
             credentialReader: credentialReader,
-            session: URLSession(configuration: configuration)
+            session: URLSession(configuration: configuration),
+            snapshotStore: TestUsageSnapshotStore()
         )
 
         _ = try await client.fetch()
@@ -96,11 +108,291 @@ enum CoreTestRunner {
         )
     }
 
+    private static func testClaudeRefreshThrottle() async throws {
+        MockClaudeUsageURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            minimumFetchInterval: 300,
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        let first = try await client.fetch()
+        let second = try await client.fetch()
+
+        try expect(first == second, "throttled refresh should return the last successful snapshot")
+        try expect(MockClaudeUsageURLProtocol.requestCount == 1, "two immediate refreshes should make one request")
+    }
+
+    private static func testClaudeConcurrentRefreshes() async throws {
+        MockClaudeUsageURLProtocol.reset(responseDelay: 0.1)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        async let first = client.fetch()
+        async let second = client.fetch()
+        let snapshots = try await [first, second]
+
+        try expect(snapshots[0] == snapshots[1], "concurrent refreshes should share one result")
+        try expect(MockClaudeUsageURLProtocol.requestCount == 1, "concurrent refreshes should make one request")
+    }
+
+    private static func testClaudeRateLimitFallback() async throws {
+        MockClaudeUsageURLProtocol.reset(statusCodes: [200, 429, 200])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let clock = TestClock(date: Date(timeIntervalSince1970: 1_784_000_000))
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            minimumFetchInterval: 300,
+            now: { clock.date },
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        let first = try await client.fetch()
+        clock.advance(by: 301)
+        let rateLimited = try await client.fetch()
+        let backedOff = try await client.fetch()
+
+        try expect(rateLimited == first, "429 should preserve the last successful snapshot")
+        try expect(backedOff == first, "backoff should keep returning the last successful snapshot")
+        try expect(MockClaudeUsageURLProtocol.requestCount == 2, "backoff should suppress a third request")
+    }
+
+    private static func testClaudeDeltaSecondsRetryAfter() async throws {
+        try await assertClaudeRetryAfter("1200")
+    }
+
+    private static func testClaudeBackoffStartsAtResponse() async throws {
+        let start = Date(timeIntervalSince1970: 1_784_000_000)
+        let clock = TestClock(date: start)
+        MockClaudeUsageURLProtocol.reset(
+            statusCodes: [200, 429, 200],
+            retryAfter: "300",
+            responseHook: { statusCode in
+                if statusCode == 429 {
+                    clock.advance(by: 10)
+                }
+            }
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            minimumFetchInterval: 0,
+            now: { clock.date },
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        _ = try await client.fetch()
+        clock.advance(by: 1)
+        _ = try await client.fetch()
+        clock.advance(by: 295)
+        _ = try await client.fetch()
+
+        try expect(MockClaudeUsageURLProtocol.requestCount == 2, "delta-seconds should begin when 429 arrives")
+    }
+
+    private static func testClaudeSnapshotResetInFlight() async throws {
+        let resetAt = try require(
+            ISO8601DateFormatter().date(from: "2026-07-20T08:00:00Z"),
+            "Claude reset time"
+        )
+        let clock = TestClock(date: resetAt.addingTimeInterval(-10))
+        MockClaudeUsageURLProtocol.reset(
+            statusCodes: [200, 429],
+            responseHook: { statusCode in
+                if statusCode == 429 {
+                    clock.advance(by: 20)
+                }
+            }
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            minimumFetchInterval: 0,
+            now: { clock.date },
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        _ = try await client.fetch()
+        do {
+            _ = try await client.fetch()
+            throw TestFailure(description: "snapshot crossing its reset time should not be returned")
+        } catch ProviderClientError.claudeUnavailable {
+            // Expected: the last snapshot expired while the rate-limited request was in flight.
+        }
+    }
+
+    private static func testClaudeHTTPDateRetryAfter() async throws {
+        let start = Date(timeIntervalSince1970: 1_784_000_000)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+        let retryAfter = formatter.string(from: start.addingTimeInterval(1_200))
+        try await assertClaudeRetryAfter(retryAfter, start: start)
+    }
+
+    private static func assertClaudeRetryAfter(
+        _ retryAfter: String,
+        start: Date = Date(timeIntervalSince1970: 1_784_000_000)
+    ) async throws {
+        MockClaudeUsageURLProtocol.reset(statusCodes: [200, 429, 200], retryAfter: retryAfter)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let clock = TestClock(date: start)
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            minimumFetchInterval: 300,
+            now: { clock.date },
+            snapshotStore: TestUsageSnapshotStore()
+        )
+
+        _ = try await client.fetch()
+        clock.advance(by: 301)
+        _ = try await client.fetch()
+        clock.advance(by: 600)
+        _ = try await client.fetch()
+
+        try expect(MockClaudeUsageURLProtocol.requestCount == 2, "Retry-After should suppress early retry")
+    }
+
+    private static func testClaudeSnapshotPersistence() async throws {
+        MockClaudeUsageURLProtocol.reset(statusCodes: [200, 429])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let clock = TestClock(date: Date(timeIntervalSince1970: 1_784_000_000))
+        let snapshotStore = TestUsageSnapshotStore()
+        let credentialReader = CountingClaudeCredentialReader { _ in
+            ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+        }
+
+        let firstClient = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            session: session,
+            minimumFetchInterval: 300,
+            now: { clock.date },
+            snapshotStore: snapshotStore
+        )
+        let first = try await firstClient.fetch()
+
+        clock.advance(by: 301)
+        let restartedClient = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            session: session,
+            minimumFetchInterval: 300,
+            now: { clock.date },
+            snapshotStore: snapshotStore
+        )
+        let restored = try await restartedClient.fetch()
+
+        let restartedDuringBackoff = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            session: session,
+            minimumFetchInterval: 300,
+            now: { clock.date },
+            snapshotStore: snapshotStore
+        )
+        let backedOffAfterRestart = try await restartedDuringBackoff.fetch()
+
+        try expect(restored == first, "restart during 429 should restore the last successful snapshot")
+        try expect(backedOffAfterRestart == first, "persisted backoff should keep the last snapshot")
+        try expect(MockClaudeUsageURLProtocol.requestCount == 2, "restart during backoff should not request again")
+    }
+
+    private static func testUsageSnapshotStore() throws {
+        let suite = "AIUsageBarSnapshotTests.\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite), "snapshot defaults")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let snapshot = UsageSnapshot(
+            provider: .claude,
+            weekly: UsageWindow(
+                usedPercent: 42,
+                resetAt: Date(timeIntervalSince1970: 1_784_512_000),
+                durationMinutes: 10_080
+            ),
+            fetchedAt: Date(timeIntervalSince1970: 1_784_000_000)
+        )
+
+        let retryAt = Date(timeIntervalSince1970: 1_784_000_900)
+        UserDefaultsUsageSnapshotStore(defaults: defaults).save(snapshot)
+        UserDefaultsUsageSnapshotStore(defaults: defaults).saveNextAllowedRequestAt(retryAt, provider: .claude)
+        let reloadedStore = UserDefaultsUsageSnapshotStore(defaults: defaults)
+        let restored = reloadedStore.load(provider: .claude)
+
+        try expect(restored == snapshot, "stored provider snapshot should round-trip")
+        try expect(
+            reloadedStore.loadNextAllowedRequestAt(provider: .claude) == retryAt,
+            "stored rate-limit backoff should round-trip"
+        )
+    }
+
+    private static func testClaudeSnapshotWithoutResetExpires() async throws {
+        let start = Date(timeIntervalSince1970: 1_784_000_000)
+        let snapshotStore = TestUsageSnapshotStore()
+        snapshotStore.save(
+            UsageSnapshot(
+                provider: .claude,
+                weekly: UsageWindow(usedPercent: 42, resetAt: nil, durationMinutes: 10_080),
+                fetchedAt: start
+            )
+        )
+        MockClaudeUsageURLProtocol.reset(statusCodes: [429])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
+        let clock = TestClock(date: start.addingTimeInterval(25 * 60 * 60))
+        let client = ClaudeUsageClient(
+            credentialReader: CountingClaudeCredentialReader { _ in
+                ClaudeCredential(accessToken: "test-token", expiresAt: nil)
+            },
+            session: URLSession(configuration: configuration),
+            now: { clock.date },
+            snapshotStore: snapshotStore
+        )
+
+        do {
+            _ = try await client.fetch()
+            throw TestFailure(description: "snapshot without reset time should expire after 24 hours")
+        } catch ProviderClientError.claudeUnavailable {
+            // Expected: the server is limited and the old snapshot is no longer safe to show.
+        }
+        try expect(MockClaudeUsageURLProtocol.requestCount == 1, "expired snapshot should attempt a fresh request")
+    }
+
     private static func testClaudeCredentialDenial() async throws {
         let credentialReader = CountingClaudeCredentialReader { _ in
             throw ProviderClientError.claudeCredentialMissing
         }
-        let client = ClaudeUsageClient(credentialReader: credentialReader)
+        let client = ClaudeUsageClient(
+            credentialReader: credentialReader,
+            snapshotStore: TestUsageSnapshotStore()
+        )
 
         for _ in 0 ..< 2 {
             do {
@@ -123,6 +415,7 @@ enum CoreTestRunner {
     }
 
     private static func testClaudeInvalidCredential() async throws {
+        MockClaudeUsageURLProtocol.reset()
         let credentialReader = CountingClaudeCredentialReader { readNumber in
             if readNumber == 1 {
                 throw TestFailure(description: "invalid credential JSON")
@@ -133,7 +426,8 @@ enum CoreTestRunner {
         configuration.protocolClasses = [MockClaudeUsageURLProtocol.self]
         let client = ClaudeUsageClient(
             credentialReader: credentialReader,
-            session: URLSession(configuration: configuration)
+            session: URLSession(configuration: configuration),
+            snapshotStore: TestUsageSnapshotStore()
         )
 
         for _ in 0 ..< 2 {
@@ -265,6 +559,45 @@ private final class CountingClaudeCredentialReader: ClaudeCredentialReading, @un
     }
 }
 
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var currentDate: Date
+
+    init(date: Date) {
+        currentDate = date
+    }
+
+    var date: Date {
+        lock.withLock { currentDate }
+    }
+
+    func advance(by interval: TimeInterval) {
+        lock.withLock { currentDate = currentDate.addingTimeInterval(interval) }
+    }
+}
+
+private final class TestUsageSnapshotStore: UsageSnapshotStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot: UsageSnapshot?
+    private var nextAllowedRequestAt: Date?
+
+    func load(provider: ProviderID) -> UsageSnapshot? {
+        lock.withLock { snapshot?.provider == provider ? snapshot : nil }
+    }
+
+    func save(_ snapshot: UsageSnapshot) {
+        lock.withLock { self.snapshot = snapshot }
+    }
+
+    func loadNextAllowedRequestAt(provider: ProviderID) -> Date? {
+        lock.withLock { nextAllowedRequestAt }
+    }
+
+    func saveNextAllowedRequestAt(_ date: Date?, provider: ProviderID) {
+        lock.withLock { nextAllowedRequestAt = date }
+    }
+}
+
 private final class MockCodexUsageURLProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
 
@@ -294,25 +627,68 @@ private final class MockCodexUsageURLProtocol: URLProtocol, @unchecked Sendable 
 }
 
 private final class MockClaudeUsageURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var count = 0
+    private nonisolated(unsafe) static var statusCodes = [200]
+    private nonisolated(unsafe) static var responseDelay: TimeInterval = 0
+    private nonisolated(unsafe) static var retryAfter = "0"
+    private nonisolated(unsafe) static var responseHook: (@Sendable (Int) -> Void)?
+
+    static var requestCount: Int {
+        lock.withLock { count }
+    }
+
+    static func reset(
+        statusCodes newStatusCodes: [Int] = [200],
+        responseDelay newResponseDelay: TimeInterval = 0,
+        retryAfter newRetryAfter: String = "0",
+        responseHook newResponseHook: (@Sendable (Int) -> Void)? = nil
+    ) {
+        lock.withLock {
+            count = 0
+            statusCodes = newStatusCodes
+            responseDelay = newResponseDelay
+            retryAfter = newRetryAfter
+            responseHook = newResponseHook
+        }
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        let (scriptedStatusCode, responseDelay, retryAfter, responseHook) = Self.lock.withLock {
+            Self.count += 1
+            if Self.statusCodes.count > 1 {
+                return (Self.statusCodes.removeFirst(), Self.responseDelay, Self.retryAfter, Self.responseHook)
+            }
+            return (Self.statusCodes.first ?? 200, Self.responseDelay, Self.retryAfter, Self.responseHook)
+        }
         let isCorrectRequest = request.url?.host == "api.anthropic.com"
             && request.url?.path == "/api/oauth/usage"
             && request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token"
-        let statusCode = isCorrectRequest ? 200 : 400
-        let payload = #"{"seven_day":{"utilization":0.42,"resets_at":"2026-07-20T08:00:00Z"}}"#
+        let statusCode = isCorrectRequest ? scriptedStatusCode : 400
+        let payload = statusCode == 429
+            ? #"{"error":{"type":"rate_limit_error","message":"Rate limited. Please try again later."}}"#
+            : #"{"seven_day":{"utilization":0.42,"resets_at":"2026-07-20T08:00:00Z"}}"#
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: ["Content-Type": "application/json", "Retry-After": retryAfter]
         )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(payload.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        let respond = { [self] in
+            responseHook?(statusCode)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(payload.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        if responseDelay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + responseDelay, execute: respond)
+        } else {
+            respond()
+        }
     }
 
     override func stopLoading() {}

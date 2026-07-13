@@ -106,20 +106,86 @@ public final class ClaudeUsageClient: @unchecked Sendable {
     private let credentialReader: ClaudeCredentialReading
     private let session: URLSession
     private let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    private let minimumFetchInterval: TimeInterval
+    private let maximumSnapshotAgeWithoutReset: TimeInterval
+    private let now: @Sendable () -> Date
+    private let snapshotStore: UsageSnapshotStoring
     private let credentialLock = NSLock()
     private var credentialCache: ClaudeCredentialCache = .unread
+    private let snapshotLock = NSLock()
+    private var lastSnapshot: UsageSnapshot?
+    private var lastSuccessfulFetchAt: Date?
+    private var nextAllowedRequestAt: Date?
+    private let inFlightLock = NSLock()
+    private var inFlightFetch: (id: UUID, task: Task<UsageSnapshot, Error>)?
 
     public init(
         credentialReader: ClaudeCredentialReading = KeychainClaudeCredentialReader(),
-        session: URLSession = .shared
+        session: URLSession = .shared,
+        minimumFetchInterval: TimeInterval = 300,
+        maximumSnapshotAgeWithoutReset: TimeInterval = 24 * 60 * 60,
+        now: @escaping @Sendable () -> Date = { Date() },
+        snapshotStore: UsageSnapshotStoring = UserDefaultsUsageSnapshotStore()
     ) {
         self.credentialReader = credentialReader
         self.session = session
+        self.minimumFetchInterval = minimumFetchInterval
+        self.maximumSnapshotAgeWithoutReset = maximumSnapshotAgeWithoutReset
+        self.now = now
+        self.snapshotStore = snapshotStore
+        let persistedSnapshot = snapshotStore.load(provider: .claude)
+        lastSnapshot = persistedSnapshot
+        lastSuccessfulFetchAt = persistedSnapshot?.fetchedAt
+        nextAllowedRequestAt = snapshotStore.loadNextAllowedRequestAt(provider: .claude)
     }
 
     public func fetch() async throws -> UsageSnapshot {
+        let (id, task) = inFlightLock.withLock { () -> (UUID, Task<UsageSnapshot, Error>) in
+            if let inFlightFetch {
+                return inFlightFetch
+            }
+            let id = UUID()
+            let task = Task { try await self.fetchUncoalesced() }
+            inFlightFetch = (id, task)
+            return (id, task)
+        }
+        defer {
+            inFlightLock.withLock {
+                if inFlightFetch?.id == id {
+                    inFlightFetch = nil
+                }
+            }
+        }
+        return try await task.value
+    }
+
+    private func fetchUncoalesced() async throws -> UsageSnapshot {
+        let requestDate = now()
+        let cachedSnapshot = snapshotLock.withLock { () -> UsageSnapshot? in
+            guard let lastSnapshot else { return nil }
+            if !isSnapshotUsable(lastSnapshot, at: requestDate) {
+                self.lastSnapshot = nil
+                lastSuccessfulFetchAt = nil
+                return nil
+            }
+            if let nextAllowedRequestAt, requestDate < nextAllowedRequestAt {
+                return lastSnapshot
+            }
+            if let lastSuccessfulFetchAt,
+               requestDate.timeIntervalSince(lastSuccessfulFetchAt) < minimumFetchInterval {
+                return lastSnapshot
+            }
+            return nil
+        }
+        if let cachedSnapshot {
+            return cachedSnapshot
+        }
+        if snapshotLock.withLock({ nextAllowedRequestAt.map { requestDate < $0 } ?? false }) {
+            throw ProviderClientError.claudeUnavailable("rate limited")
+        }
+
         let credential = try credential()
-        if let expiresAt = credential.expiresAt, expiresAt <= Date() {
+        if let expiresAt = credential.expiresAt, expiresAt <= requestDate {
             throw ProviderClientError.claudeLoginExpired
         }
 
@@ -131,16 +197,72 @@ public final class ClaudeUsageClient: @unchecked Sendable {
         request.setValue("aiusagebar/0.1.0", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
+        let responseDate = now()
         guard let http = response as? HTTPURLResponse else {
             throw ProviderClientError.claudeUnavailable("invalid response")
         }
         if http.statusCode == 401 || http.statusCode == 403 {
             throw ProviderClientError.claudeLoginExpired
         }
+        if http.statusCode == 429 {
+            let retryAfter = retryDelay(
+                headerValue: http.value(forHTTPHeaderField: "Retry-After"),
+                relativeTo: responseDate
+            )
+            let backoffUntil = responseDate.addingTimeInterval(max(minimumFetchInterval, retryAfter))
+            let fallback = snapshotLock.withLock { () -> UsageSnapshot? in
+                nextAllowedRequestAt = backoffUntil
+                guard let lastSnapshot, isSnapshotUsable(lastSnapshot, at: responseDate) else {
+                    self.lastSnapshot = nil
+                    lastSuccessfulFetchAt = nil
+                    return nil
+                }
+                return lastSnapshot
+            }
+            snapshotStore.saveNextAllowedRequestAt(backoffUntil, provider: .claude)
+            if let fallback {
+                return fallback
+            }
+            throw ProviderClientError.claudeUnavailable("rate limited")
+        }
         guard (200 ..< 300).contains(http.statusCode) else {
             throw ProviderClientError.claudeUnavailable("HTTP \(http.statusCode)")
         }
-        return try ClaudeUsageParser.parse(data: data)
+        let parsed = try ClaudeUsageParser.parse(data: data)
+        let snapshot = UsageSnapshot(
+            provider: parsed.provider,
+            weekly: parsed.weekly,
+            fetchedAt: requestDate
+        )
+        snapshotLock.withLock {
+            lastSnapshot = snapshot
+            lastSuccessfulFetchAt = requestDate
+            nextAllowedRequestAt = nil
+        }
+        snapshotStore.save(snapshot)
+        snapshotStore.saveNextAllowedRequestAt(nil, provider: .claude)
+        return snapshot
+    }
+
+    private func isSnapshotUsable(_ snapshot: UsageSnapshot, at date: Date) -> Bool {
+        if let resetAt = snapshot.weekly.resetAt {
+            return resetAt > date
+        }
+        return date.timeIntervalSince(snapshot.fetchedAt) < maximumSnapshotAgeWithoutReset
+    }
+
+    private func retryDelay(headerValue: String?, relativeTo date: Date) -> TimeInterval {
+        guard let headerValue else { return 0 }
+        if let seconds = TimeInterval(headerValue) {
+            return max(0, seconds)
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+        guard let retryDate = formatter.date(from: headerValue) else { return 0 }
+        return max(0, retryDate.timeIntervalSince(date))
     }
 
     public func reloadCredentialOnNextFetch() {

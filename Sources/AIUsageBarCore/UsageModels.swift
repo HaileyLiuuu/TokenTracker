@@ -14,7 +14,7 @@ public enum ProviderID: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public struct UsageWindow: Equatable, Sendable {
+public struct UsageWindow: Codable, Equatable, Sendable {
     public let usedPercent: Double
     public let resetAt: Date?
     public let durationMinutes: Int?
@@ -35,7 +35,7 @@ public struct UsageWindow: Equatable, Sendable {
     }
 }
 
-public struct UsageSnapshot: Equatable, Sendable {
+public struct UsageSnapshot: Codable, Equatable, Sendable {
     public let provider: ProviderID
     public let weekly: UsageWindow
     public let fetchedAt: Date
