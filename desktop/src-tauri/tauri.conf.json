@@ -41,8 +41,8 @@
       "icons/icon.ico"
     ],
     "category": "Utility",
-    "shortDescription": "Codex and Claude Code weekly usage in your menu bar or system tray.",
-    "longDescription": "AIUsageBar shows real Codex and Claude Code weekly usage, reset time, and local seven-day token totals.",
+    "shortDescription": "Cross-platform AI token usage monitor for macOS menu bar and Windows system tray.",
+    "longDescription": "TokenTracker shows real Codex and Claude Code weekly usage, remaining percentage, reset time, and local seven-day token totals.",
     "copyright": "Copyright © 2026 Hailey Liu",
     "macOS": {
       "minimumSystemVersion": "13.0",

@@ -54,21 +54,36 @@ jobs:
           $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
           $override = @{ bundle = @{ windows = @{ certificateThumbprint = $certificate.Thumbprint; timestampUrl = "http://timestamp.digicert.com" } } } | ConvertTo-Json -Compress -Depth 5
           "TAURI_CONFIG=$override" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Export macOS signing env (skip if no certificate)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ]; then
+            echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}" >> $GITHUB_ENV
+            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" >> $GITHUB_ENV
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> $GITHUB_ENV
+            echo "KEYCHAIN_PASSWORD=${{ secrets.KEYCHAIN_PASSWORD }}" >> $GITHUB_ENV
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> $GITHUB_ENV
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> $GITHUB_ENV
+          else
+            echo "No Apple signing certificate configured — building unsigned"
+          fi
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop
           tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: AIUsageBar ${{ inputs.tag || github.ref_name }}
-          releaseBody: Download the installer for your operating system. See README for first-run requirements and privacy details.
+          releaseName: TokenTracker ${{ inputs.tag || github.ref_name }}
+          releaseBody: |
+            Download the installer for your operating system. See README for first-run requirements and privacy details.
+
+            **macOS users**: this app is unsigned. Right-click → Open on first launch.
+            **Windows users**: SmartScreen may warn. Click "More info" → "Run anyway".
+
+            下载对应系统的安装包。首次使用请参考 README 说明。
+            macOS 用户：首次打开请右键 → 打开。Windows 用户：出现警告请点击"仍要运行"。
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
