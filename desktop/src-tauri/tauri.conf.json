@@ -33,6 +33,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Utility",
     "shortDescription": "Codex and Claude Code weekly usage in your menu bar or system tray.",
     "longDescription": "AIUsageBar shows real Codex and Claude Code weekly usage, reset time, and local seven-day token totals.",
