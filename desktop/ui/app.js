@@ -9,7 +9,7 @@ const copy = {
     refresh: "Refresh now", quit: "Quit TokenTracker", providerData: "Provider data",
     updated: "Updated", loading: "Loading…", unavailable: "Unavailable",
     signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code",
-    currentSession: "Current week", allModels: "All models",
+    currentSession: "Current session", currentWeekLabel: "CURRENT WEEK", allModels: "All models",
     refreshLabel: "REFRESH NOW", quitLabel: "QUIT APP"
   },
   "zh-Hans": {
@@ -18,7 +18,7 @@ const copy = {
     refresh: "立即刷新", quit: "退出 TokenTracker", providerData: "服务官方数据",
     updated: "最后更新", loading: "正在读取…", unavailable: "暂不可用",
     signInCodex: "登录 Codex", signInClaude: "登录 Claude Code",
-    currentSession: "本周用量", allModels: "所有模型",
+    currentSession: "当前会话", currentWeekLabel: "本周用量", allModels: "所有模型",
     refreshLabel: "立即刷新", quitLabel: "退出程序"
   }
 };
@@ -91,7 +91,7 @@ function providerCard(provider, index) {
         <span class="meta-label">${t("resets")}</span>
         <span class="meta-value">${formatDate(provider.snapshot?.weekly?.resetAt)}</span>
       </div>
-      <div class="hero-label">${t("remaining")}</div>
+      <div class="hero-label">${isCodex ? t("remaining") : t("currentWeekLabel")}</div>
       <div class="meta-stack">
         <span class="meta-label">${t("localTokens")}</span>
         <span class="meta-value">${formatNumber(provider.localTokens)}</span>
