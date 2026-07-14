@@ -73,7 +73,7 @@ function providerCard(provider, index) {
 
   let tierHtml = "";
   if (!isCodex && provider.snapshot) {
-    tierHtml += renderTier(t("weeklyAllLabel"), provider.snapshot.weekly, provider.localTokens);
+    tierHtml += renderTier(t("currentWeekLabel"), provider.snapshot.weekly, provider.localTokens);
     if (provider.models) {
       provider.models.filter(m => m.modelKey !== "").forEach(m => {
         tierHtml += renderTier(m.displayName, m.weekly, provider.localTokens);
@@ -93,7 +93,7 @@ function providerCard(provider, index) {
         <span class="meta-label">${t("resets")}</span>
         <span class="meta-value">${formatDate(heroWindow?.resetAt)}</span>
       </div>
-      <div class="hero-label">${isCodex ? t("remaining") : t("currentWeekLabel")}</div>
+      <div class="hero-label">${isCodex ? t("remaining") : t("currentSession")}</div>
       <div class="meta-stack">
         <span class="meta-label">${t("localTokens")}</span>
         <span class="meta-value">${formatNumber(provider.localTokens)}</span>
