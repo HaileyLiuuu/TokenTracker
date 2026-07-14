@@ -46,8 +46,8 @@ function renderTier(label, w, localTokens) {
   return `<div class="tier-section">
     <div class="tier-heading">${label}</div>
     <div class="tier-row"><span class="tier-label">${t("remaining")}</span><span class="tier-value">${pct}</span></div>
-    <div class="tier-row"><span class="tier-label">${t("resets")}</span><span class="tier-value" style="font-size:14px">${formatDate(w.resetAt)}</span></div>
-    <div class="tier-row"><span class="tier-label">${t("localTokens")}</span><span class="tier-value" style="font-size:14px">${formatNumber(localTokens)}</span></div>
+    <div class="tier-row"><span class="tier-label">${t("resets")}</span><span class="tier-value tier-value-sm">${formatDate(w.resetAt)}</span></div>
+    <div class="tier-row"><span class="tier-label">${t("localTokens")}</span><span class="tier-value tier-value-sm">${formatNumber(localTokens)}</span></div>
     <div class="tier-progress"><div class="tier-progress-fill" style="width:${r ?? 0}%;opacity:${r != null ? 1 : 0}"></div></div>
   </div>`;
 }
