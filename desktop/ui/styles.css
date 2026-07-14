@@ -50,28 +50,28 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 /* ── Header ── */
 .editorial-header {
   display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 20px 20px 24px 20px;
+  padding: 16px 16px 18px 16px;
 }
 .header-left { flex: 1; }
 .display-heading {
-  font-size: 42px; font-weight: 800; line-height: 0.92;
+  font-size: 32px; font-weight: 800; line-height: 0.92;
   letter-spacing: -0.03em; margin: 0;
 }
 .header-subtitle {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted-ink); margin: 4px 0 0 0;
 }
 .header-right {
   display: flex; align-items: center; gap: 10px;
-  font-size: 10px; font-weight: 600; color: var(--muted-ink);
+  font-size: 9px; font-weight: 600; color: var(--muted-ink);
 }
-.header-arrow { font-size: 14px; }
+.header-arrow { font-size: 13px; }
 
 /* ── Tab bar ── */
 .tab-bar { display: flex; }
 .tab {
-  flex: 1; height: 40px; display: grid; place-items: center;
-  font-size: 11px; font-weight: 650; text-transform: uppercase;
+  flex: 1; height: 36px; display: grid; place-items: center;
+  font-size: 10px; font-weight: 650; text-transform: uppercase;
   letter-spacing: 0.04em;
   background: var(--white); color: var(--ink);
   border: 1px solid var(--border); border-radius: 0;
@@ -87,7 +87,7 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 
 /* ── Provider panel ── */
 .provider-panel {
-  padding: 18px;
+  padding: 14px;
   border-bottom: 1px solid var(--border);
   position: relative;
 }
@@ -106,51 +106,51 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 
 /* ── Provider identity ── */
 .provider-identity {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
 }
 .provider-badge {
-  width: 40px; height: 40px; display: grid; place-items: center;
-  font-size: 15px; font-weight: 800;
+  width: 34px; height: 34px; display: grid; place-items: center;
+  font-size: 13px; font-weight: 800;
   border: 1px solid var(--border);
 }
 .codex .provider-badge { background: var(--lime); color: var(--ink); }
 .claude .provider-badge { background: var(--orange); color: var(--ink); }
 .provider-name {
-  font-size: 12px; font-weight: 650; text-transform: uppercase;
+  font-size: 11px; font-weight: 650; text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.provider-index { margin-left: auto; font-size: 10px; color: var(--muted-ink); }
+.provider-index { margin-left: auto; font-size: 9px; color: var(--muted-ink); }
 
 /* ── Hero grid ── */
 .provider-hero {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: auto auto;
-  gap: 6px 12px;
-  margin-bottom: 16px;
+  gap: 5px 10px;
+  margin-bottom: 12px;
 }
 .hero-pct {
-  font-size: 64px; font-weight: 800; line-height: 0.88;
+  font-size: 48px; font-weight: 800; line-height: 0.88;
   letter-spacing: -0.05em; font-variant-numeric: tabular-nums;
 }
 .hero-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--muted-ink);
   align-self: end;
 }
 .meta-stack { display: flex; flex-direction: column; gap: 3px; }
 .meta-label {
-  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  font-size: 9px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--muted-ink);
 }
 .meta-value {
-  font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
 
 /* ── Progress bar ── */
 .progress-bar {
-  height: 20px; background: var(--white);
+  height: 16px; background: var(--white);
   border: 1px solid var(--border); border-radius: 0;
   margin-bottom: 4px; overflow: hidden;
 }
@@ -161,34 +161,34 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 .claude .progress-fill { background: var(--orange); }
 .progress-labels {
   display: flex; justify-content: space-between;
-  font-size: 10px; font-weight: 600; color: var(--muted-ink);
+  font-size: 9px; font-weight: 600; color: var(--muted-ink);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 
 /* ── Tier sections (Current session, Fable, etc.) ── */
 .tier-section {
-  margin-top: 12px; padding-top: 12px;
+  margin-top: 10px; padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 .tier-heading {
-  font-size: 11px; font-weight: 600; margin-bottom: 6px;
+  font-size: 10px; font-weight: 600; margin-bottom: 5px;
 }
 .tier-row {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 3px;
 }
 .tier-label {
-  font-size: 10px; color: var(--muted-ink); text-transform: uppercase;
+  font-size: 9px; color: var(--muted-ink); text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .tier-value {
-  font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .tier-value-sm {
-  font-size: 13px; font-weight: 600;
+  font-size: 11px; font-weight: 600;
 }
 .tier-progress {
-  height: 5px; background: var(--white);
+  height: 4px; background: var(--white);
   border: 1px solid var(--border); border-radius: 0;
   margin-top: 3px; overflow: hidden;
 }
@@ -201,13 +201,13 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 .footer-strip { display: flex; }
 .footer-module {
   flex: 1; display: flex; flex-direction: column; justify-content: center;
-  align-items: center; gap: 6px; padding: 14px 6px;
+  align-items: center; gap: 5px; padding: 10px 4px;
   border-top: 1px solid var(--border);
   background: var(--white);
 }
 .footer-module:not(:last-child) { border-right: 1px solid var(--border); }
 .footer-label {
-  font-size: 9px; font-weight: 600; text-transform: uppercase;
+  font-size: 8px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; text-align: center; line-height: 1.3;
 }
 .footer-refresh { background: var(--lime); }
@@ -216,19 +216,19 @@ button { font: inherit; color: inherit; cursor: default; border: 0; }
 .footer-quit:hover { filter: brightness(0.85); }
 .footer-buttons { display: flex; gap: 3px; }
 .footer-btn {
-  padding: 4px 8px; font-size: 9px; font-weight: 600;
+  padding: 4px 7px; font-size: 8px; font-weight: 600;
   border: 1px solid var(--border); border-radius: 0;
   background: var(--white); color: var(--ink);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 .footer-btn.active { background: var(--blue); color: white; }
-.refresh-icon, .quit-icon { font-size: 18px; }
+.refresh-icon, .quit-icon { font-size: 15px; }
 .refresh-icon.spinning { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Provider note ── */
 .provider-note {
-  margin-top: 12px; font-size: 11px; display: flex;
+  margin-top: 10px; font-size: 10px; display: flex;
   justify-content: space-between; gap: 8px;
 }
 .setup-link {

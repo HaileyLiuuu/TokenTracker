@@ -3,6 +3,27 @@
 version = 4
 
 [[package]]
+name = "TokenTracker"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "httpdate",
+ "keyring",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "walkdir",
+ "whoami",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -26,27 +47,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "aiusagebar"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs",
- "httpdate",
- "keyring",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "walkdir",
- "whoami",
 ]
 
 [[package]]

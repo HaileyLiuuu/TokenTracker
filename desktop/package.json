@@ -1,5 +1,6 @@
 {
-  "name": "aiusagebar-desktop",
+  "name": "token-tracker",
+  "productName": "TokenTracker",
   "private": true,
   "version": "0.1.0",
   "type": "module",

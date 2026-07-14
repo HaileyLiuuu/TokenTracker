@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AIUsageBar",
+  "productName": "TokenTracker",
   "version": "0.1.0",
   "identifier": "com.haileyliu.aiusagebar",
   "build": {
@@ -11,9 +11,9 @@
     "windows": [
       {
         "label": "main",
-        "title": "AIUsageBar",
-        "width": 400,
-        "height": 680,
+        "title": "TokenTracker",
+        "width": 340,
+        "height": 520,
         "visible": false,
         "resizable": false,
         "maximizable": false,

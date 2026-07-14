@@ -6,18 +6,20 @@ const copy = {
   en: {
     usage: "Usage", weeklyUsage: "Weekly usage", primary: "Primary", language: "Language",
     remaining: "Remaining", resets: "Resets", localTokens: "Local 7-day tokens",
-    refresh: "Refresh now", quit: "Quit AIUsageBar", providerData: "Provider data",
+    refresh: "Refresh now", quit: "Quit TokenTracker", providerData: "Provider data",
     updated: "Updated", loading: "Loading…", unavailable: "Unavailable",
     signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code",
-    currentSession: "Current session", allModels: "All models"
+    currentSession: "Current session", allModels: "All models",
+    refreshLabel: "REFRESH NOW", quitLabel: "QUIT APP"
   },
   "zh-Hans": {
     usage: "用量", weeklyUsage: "每周用量", primary: "主显示", language: "界面语言",
     remaining: "剩余", resets: "下次重置", localTokens: "本机 7 天 Token",
-    refresh: "立即刷新", quit: "退出 AIUsageBar", providerData: "服务官方数据",
+    refresh: "立即刷新", quit: "退出 TokenTracker", providerData: "服务官方数据",
     updated: "最后更新", loading: "正在读取…", unavailable: "暂不可用",
     signInCodex: "登录 Codex", signInClaude: "登录 Claude Code",
-    currentSession: "当前会话", allModels: "所有模型"
+    currentSession: "当前会话", allModels: "所有模型",
+    refreshLabel: "立即刷新", quitLabel: "退出程序"
   }
 };
 

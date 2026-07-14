@@ -200,7 +200,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .icon(tray_image(None, ProviderId::Codex))
         .icon_as_template(cfg!(target_os = "macos"))
         .title("C —%")
-        .tooltip("AIUsageBar")
+        .tooltip("TokenTracker")
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
