@@ -1,59 +1,46 @@
-# TokenTracker v5 — Claude Card Hero Label Fix
+# TokenTracker v5 — Claude Card Display Order + Tray Data Source
 
-**Status: EXECUTABLE SPEC. Read CONTEXT.md first. One-line change.**
+**Status: IMPLEMENTED. This doc records the final design for future agents.**
 
-## 0. What changes
+## 0. What changed
 
-The Claude card hero label currently says "CURRENT SESSION". Change it to
-"CURRENT WEEK".
+| Area | Before | After |
+|---|---|---|
+| Claude hero data | `snapshot.weekly` (seven_day, all models) | `provider.session` (five_hour, current session) |
+| Claude hero label | "REMAINING" / "剩余" | "CURRENT SESSION" / "当前会话" |
+| Claude tier 1 | `provider.session` with "Current session" | `provider.snapshot.weekly` with "Current week" |
+| Tray percentage | `snapshot.weekly.remaining_percent` | `snapshot.session` first, fallback to `snapshot.weekly` |
 
-| Before | After |
-|---|---|
-| CURRENT SESSION / 当前会话 | CURRENT WEEK / 本周用量 |
+## 1. Claude card layout (final state)
 
-That's it. Data sources, tier rows, Codex card — all unchanged.
-
-## 1. What to change
-
-One file: `desktop/ui/app.js`.
-
-In the `copy` object (line 12), change the `currentSession` value:
-
-```js
-// Before:
-currentSession: "Current session",
-
-// After:
-currentSession: "Current week",
+```
+┌─ Claude panel ─────────────────────────┐
+│ [CC] CLAUDE CODE                   02 ↗ │
+│                                         │
+│ 93%              RESETS 2:19 PM        │  ← HERO (session data)
+│ CURRENT SESSION  LOCAL TOKENS 12,450   │     label: "CURRENT SESSION"
+│ [████████████████████████]             │
+│                                         │
+│ Current week                 86%        │  ← TIER 1 (weekly all models)
+│ Resets  Jul 17      12,450             │     label: "Current week"
+│ ───                                     │
+│ Fable                         76%        │  ← TIER 2+ (per-model)
+│ Resets  Jul 17      12,450             │
+└─────────────────────────────────────────┘
 ```
 
-In `copy["zh-Hans"]` (line 21):
+## 2. Changed files
 
-```js
-// Before:
-currentSession: "当前会话",
+### `desktop/ui/app.js`
+- `providerCard()`: `heroWindow` = session for Claude, weekly for Codex (line 63)
+- `providerCard()`: hero label key = `"currentSession"` for Claude (line 96)
+- `providerCard()`: tier 1 = `provider.snapshot.weekly` with `t("currentWeekLabel")` (line 76)
+- i18n keys: `currentSession: "CURRENT SESSION"`, `currentWeekLabel: "Current week"`
 
-// After:
-currentSession: "本周用量",
-```
+### `desktop/src-tauri/src/desktop.rs`
+- `update_tray()`: tray percentage = `snapshot.session` first, fallback to `snapshot.weekly` (line 343)
 
-The key name `currentSession` stays the same — only the display value changes.
-
-The `currentSession` key is referenced in two places:
-- `providerCard()` hero label (line ~100): `t(heroLabelKey)` where `heroLabelKey` resolves to `"currentSession"` for Claude
-- (formerly in tier rendering — no longer used there after v4)
-
-**No other code changes.** No new i18n keys. No data source changes. No CSS.
-
-## 2. Verification
-
-1. Build the app.
-2. Claude card hero label reads "CURRENT WEEK" (English) / "本周用量" (Chinese).
-3. Data, tier rows, progress bar, Codex card — all unchanged.
-
-## 3. Standing constraints
-
-- Single file change (`app.js`), two lines changed.
-- No Rust, no CSS, no HTML.
-- Commit only `app.js`.
-- Never `git reset`, `git clean`, `git checkout --`.
+## 3. Not changed
+- Codex card (hero = weekly, label = "REMAINING", no tiers)
+- Per-model tiers (Fable etc.) rendered from `provider.models`
+- Rust parsing (`parse_claude_usage` already populates `session` from five_hour)
