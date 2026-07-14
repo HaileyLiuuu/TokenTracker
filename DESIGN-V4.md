@@ -2,14 +2,15 @@
 
 **Status: EXECUTABLE SPEC. Read CONTEXT.md first.**
 
-## 0. Four issues to fix
+## 0. Five issues to fix
 
 | # | Issue | Root cause |
 |---|---|---|
-| 1 | Panel too large | Window is 400×680px. For a macOS menu bar popover, standard is ~340×520. The extra height makes it feel bloated. |
-| 2 | Font/component sizes wrong for panel width | When we narrowed from 400→340px, the 42px headline and 64px hero % will overflow. Everything must scale proportionally to the new width. |
-| 3 | Claude card "Current session" missing | The `renderTier` JS logic is correct (it checks `if (!w) return ""`). The data IS populated from `parse_claude_usage` → `session`. The issue is: (a) the `provider.session` field is separate from the card header display, and (b) the tier section for session may be masked by an empty `models` array or a DOM layout issue. The execution must verify that after a fresh fetch, `provider.session` is non-null in Claude cards. |
-| 4 | App called "AIUsageBar" everywhere — rename to TokenTracker | Name is in HTML title, Cargo.toml, tauri.conf.json, README, tray tooltip, and i18n strings. |
+| 1 | Panel too large | Window is 400×680px. For a macOS menu bar popover, standard is ~340×520. |
+| 2 | Font/component sizes wrong for panel width | Everything scaled for 400px width. At 340px, sizes must reduce ~15%. |
+| 3 | Claude card "Current session" missing | Data path is correct (`parse_claude_usage`→`session`→`ProviderView`), but must verify after fresh fetch. |
+| 4 | App called "AIUsageBar" — rename to TokenTracker | Name is in HTML title, Cargo.toml, tauri.conf.json, tray tooltip, and i18n strings. |
+| 5 | **Refresh/Quit footer not localized in Chinese** | V3 redesign replaced `<button data-i18n="refresh">` with hardcoded `<span>REFRESH<br>NOW</span>` — lost the `data-i18n` attribute. `render()` only updates `[data-i18n]` elements. |
 
 ## 1. Panel size: 340 × 520
 
@@ -186,29 +187,105 @@ Change to:
 - Rust module names, test names, file names stay.
 - Git repo name stays (that's a separate `git remote` operation).
 
+## 4.5 Footer i18n bug fix
+
+### Root cause
+
+V3 redesign (`index.html` lines 44-51) replaced the old localized buttons:
+
+```html
+<!-- OLD (correct) — data-i18n was on the button -->
+<button id="refresh-button" data-i18n="refresh">Refresh now</button>
+<button id="quit-button" data-i18n="quit">Quit AIUsageBar</button>
+```
+
+with hardcoded English-only spans:
+
+```html
+<!-- NEW (broken) — no data-i18n, text is hardcoded -->
+<span class="footer-label">REFRESH<br>NOW</span>
+<span class="footer-label">QUIT<br>APP</span>
+```
+
+`render()` updates `[data-i18n]` elements via `textContent`. These spans have
+no `data-i18n` attribute, so they never get localized.
+
+The `<br>` inside the span is also incompatible with data-i18n — `textContent`
+strips HTML tags, so even with `data-i18n`, the forced line break would be lost.
+
+### Fix
+
+**Step 1 — Update `index.html` footer buttons:**
+
+Replace the `<span class="footer-label">` in both buttons with data-i18n spans:
+
+```html
+<button class="footer-module footer-refresh" id="refresh-button">
+  <span class="footer-label" data-i18n="refreshLabel">REFRESH NOW</span>
+  <span class="refresh-icon" id="refresh-icon">↻</span>
+</button>
+<button class="footer-module footer-quit" id="quit-button">
+  <span class="footer-label" data-i18n="quitLabel">QUIT APP</span>
+  <span class="quit-icon">↗</span>
+</button>
+```
+
+Changes from current: remove `<br>`, add `data-i18n="refreshLabel"` and
+`data-i18n="quitLabel"`. The CSS `.footer-label` already has `text-align: center;
+line-height: 1.3` — if the label is long, it wraps naturally without a `<br>`.
+
+**Step 2 — Add i18n keys to `app.js` `copy` objects:**
+
+```js
+// copy.en — add:
+refreshLabel: "REFRESH NOW", quitLabel: "QUIT APP",
+
+// copy["zh-Hans"] — add:
+refreshLabel: "立即刷新", quitLabel: "退出程序",
+```
+
+The existing `refresh` and `quit` keys remain unchanged (used elsewhere).
+`render()` will auto-localize the new `[data-i18n]` spans.
+
+**Step 3 — CSS already handles uppercase:**
+
+`.footer-label { text-transform: uppercase; }` in styles.css ensures the
+labels appear in uppercase regardless of the i18n value. Chinese characters
+are unaffected by `text-transform`, so they render correctly.
+
+---
+
 ## 5. Execution order
 
 1. Read `CONTEXT.md` and this document.
-2. Read the current `styles.css`, `app.js`, `index.html`, `tauri.conf.json`.
+2. Read the current `styles.css`, `app.js`, `index.html`, `tauri.conf.json`, `desktop.rs`.
 3. Replace `tauri.conf.json` window size: 340×520.
 4. Rewrite `styles.css` with ALL the scaled sizes from the table in Section 2.
    This is a find-and-replace job: every `px` value changes. Do not change the
    color system or structure — only sizes.
-5. Update `index.html` title: "TokenTracker".
-6. Update `tauri.conf.json` productName and title: "TokenTracker".
-7. Update `Cargo.toml` name.
-8. Update `package.json` name/productName.
-9. Update `desktop.rs` tray tooltip from "AIUsageBar" → "TokenTracker".
-10. Update `app.js` i18n quit strings.
-11. Run `cargo test --tests`, `cargo clippy --all-targets -- -D warnings`,
+5. Update `index.html` title → "TokenTracker".
+6. Fix `index.html` footer labels: add `data-i18n="refreshLabel"` and
+   `data-i18n="quitLabel"` per Section 4.5. Remove the hardcoded `<br>`.
+7. Add `refreshLabel` / `quitLabel` i18n keys to `app.js` `copy` objects per Section 4.5.
+8. Update `tauri.conf.json` productName and title: "TokenTracker".
+9. Update `Cargo.toml` name.
+10. Update `package.json` name/productName.
+11. Update `desktop.rs` tray tooltip from "AIUsageBar" → "TokenTracker".
+12. Update `app.js` i18n quit string: "Quit AIUsageBar" → "Quit TokenTracker".
+13. Run `cargo test --tests`, `cargo clippy --all-targets -- -D warnings`,
     `cargo fmt --check`.
-12. Build: `npm run tauri build -- --target universal-apple-darwin --bundles app`.
-13. **Clear the old cache** so session data is captured fresh:
+14. Build: `npm run tauri build -- --target universal-apple-darwin --bundles app`.
+15. **Clear the old cache** so session data is captured fresh:
     `rm -f "$HOME/Library/Application Support/com.haileyliu.aiusagebar/usage-cache.json"`
-14. Launch the app. Wait 10s for first fetch.
-15. Verify: Claude card shows three sections (main card + Current session + per-model tiers).
-    Panel doesn't overflow at 340×520. Content scrolls if needed.
-16. Commit. Do not push.
+16. Launch the app. Wait 10s for first fetch.
+17. Verify:
+    - Panel is 340×520, no overflow.
+    - Claude card shows three sections (main card + Current session + per-model).
+    - Switch language to Chinese → footer shows "立即刷新" and "退出程序".
+    - Switch back to English → footer shows "REFRESH NOW" and "QUIT APP".
+    - App title is "TokenTracker" in HTML `<title>`.
+    - Tray tooltip says "TokenTracker".
+18. Commit. Do not push.
 
 ## 6. Standing constraints
 
