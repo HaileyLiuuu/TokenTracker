@@ -322,3 +322,23 @@ Also add a test that a payload without `five_hour` produces `session: None`.
 - Never make model API calls to test the quota display.
 - Do not delete the Swift implementation under `Sources/`.
 - Do not push, create a remote, or publish without explicit user direction.
+
+## 6. Known bugs (fixed post-commit)
+
+### 6.1 Panel content overflow — no scrolling
+
+The panel is 370×610px fixed. Three-tier data (session + per-model rows)
+exceeds this height. Fixed in `ca8f9fb`: `.cards { overflow-y: auto }`.
+
+**Design lesson:** any change that adds vertical content must ensure the
+`.cards` container can scroll. Panel size is fixed in `tauri.conf.json`.
+
+### 6.2 "All models" tier section duplicates the card header
+
+The card heading already shows total remaining % + progress bar sourced from
+`snapshot.weekly` (= all models). Rendering another tier section with the
+same `snapshot.weekly` is redundant. Fixed in `ca8f9fb`: removed the
+`allModels` tier section.
+
+**Design lesson:** the card header IS the "All models" display. Tier sections
+below it should only be Current session + per-model rows (modelKey != "").
