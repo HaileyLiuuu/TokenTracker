@@ -1,9 +1,9 @@
 use crate::{
-    ProviderId, UsageSnapshot,
+    ModelUsage, ProviderId, UsageSnapshot,
     service::{AppPaths, UsageService},
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::{sync::Mutex, time::Instant};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, Runtime, State, WindowEvent,
     image::Image,
@@ -42,10 +42,12 @@ pub struct SettingsPatch {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderView {
     pub id: ProviderId,
+    pub display_name: String,
     pub snapshot: Option<UsageSnapshot>,
     pub local_tokens: Option<u64>,
     pub failure: Option<String>,
     pub loading: bool,
+    pub models: Vec<ModelUsage>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,10 +66,12 @@ impl Default for AppViewState {
                 .into_iter()
                 .map(|id| ProviderView {
                     id,
+                    display_name: id.display_name().to_string(),
                     snapshot: None,
                     local_tokens: None,
                     failure: None,
                     loading: true,
+                    models: vec![],
                 })
                 .collect(),
             refreshing: true,
@@ -77,8 +81,10 @@ impl Default for AppViewState {
 
 #[derive(Default)]
 struct PopupState {
-    opened_by_click: bool,
-    pointer_over_window: bool,
+    /// When the panel was last hidden. Used to suppress the reopen that would
+    /// otherwise follow the focus-loss → tray-click event pair, which is how a
+    /// second click on the tray icon closes the panel (contract rule I3).
+    hidden_at: Option<Instant>,
 }
 
 pub struct DesktopState {
@@ -137,18 +143,6 @@ fn quit_app<R: Runtime>(app: AppHandle<R>) {
     app.exit(0);
 }
 
-#[tauri::command]
-fn set_window_hovered<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, DesktopState>,
-    hovered: bool,
-) {
-    state.popup.lock().expect("popup state").pointer_over_window = hovered;
-    if !hovered {
-        schedule_hover_close(app);
-    }
-}
-
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -194,7 +188,6 @@ pub fn run() {
             save_settings,
             refresh_usage,
             quit_app,
-            set_window_hovered
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AIUsageBar");
@@ -207,18 +200,16 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .title("C —%")
         .tooltip("AIUsageBar")
         .show_menu_on_left_click(false)
-        .on_tray_icon_event(|tray, event| match event {
-            TrayIconEvent::Click {
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
                 position,
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } => toggle_popup(tray.app_handle(), position.x, position.y),
-            TrayIconEvent::Enter { position, .. } => {
-                show_popup(tray.app_handle(), position.x, position.y, false)
+            } = event
+            {
+                toggle_popup(tray.app_handle(), position.x, position.y);
             }
-            TrayIconEvent::Leave { .. } => schedule_hover_close(tray.app_handle().clone()),
-            _ => {}
         })
         .build(app)?;
     Ok(())
@@ -230,25 +221,27 @@ fn toggle_popup<R: Runtime>(app: &AppHandle<R>, x: f64, y: f64) {
     };
     if window.is_visible().unwrap_or(false) {
         hide_popup(app);
-    } else {
-        show_popup(app, x, y, true);
+        return;
     }
+    // If the panel was hidden micro-seconds ago, this click is the same gesture
+    // that dismissed it (focus loss fired first) — not a request to reopen.
+    let just_hidden = app
+        .try_state::<DesktopState>()
+        .and_then(|state| state.popup.lock().expect("popup state").hidden_at)
+        .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(250));
+    if just_hidden {
+        return;
+    }
+    show_popup(app, x, y);
 }
 
-fn show_popup<R: Runtime>(app: &AppHandle<R>, x: f64, y: f64, clicked: bool) {
+fn show_popup<R: Runtime>(app: &AppHandle<R>, x: f64, y: f64) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
     position_popup(&window, x, y);
-    if let Some(state) = app.try_state::<DesktopState>() {
-        let mut popup = state.popup.lock().expect("popup state");
-        popup.opened_by_click |= clicked;
-        popup.pointer_over_window = true;
-    }
     let _ = window.show();
-    if clicked {
-        let _ = window.set_focus();
-    }
+    let _ = window.set_focus();
     if app
         .try_state::<DesktopState>()
         .is_some_and(|state| state.service.is_stale(chrono::Duration::seconds(30)))
@@ -287,27 +280,11 @@ async fn perform_refresh<R: Runtime>(app: AppHandle<R>, manual: bool) -> AppView
 
 fn hide_popup<R: Runtime>(app: &AppHandle<R>) {
     if let Some(state) = app.try_state::<DesktopState>() {
-        *state.popup.lock().expect("popup state") = PopupState::default();
+        state.popup.lock().expect("popup state").hidden_at = Some(Instant::now());
     }
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
-}
-
-fn schedule_hover_close<R: Runtime>(app: AppHandle<R>) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(450)).await;
-        let should_hide = app
-            .try_state::<DesktopState>()
-            .map(|state| {
-                let popup = state.popup.lock().expect("popup state");
-                !popup.opened_by_click && !popup.pointer_over_window
-            })
-            .unwrap_or(false);
-        if should_hide {
-            hide_popup(&app);
-        }
-    });
 }
 
 fn position_popup<R: Runtime>(window: &tauri::WebviewWindow<R>, x: f64, y: f64) {
@@ -363,22 +340,20 @@ pub fn update_tray<R: Runtime>(app: &AppHandle<R>, view: &AppViewState) {
         .and_then(|item| item.snapshot.as_ref())
         .map(|snapshot| snapshot.weekly.remaining_percent.round().clamp(0.0, 100.0) as u8);
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let initial = if provider == ProviderId::Codex {
-            "C"
-        } else {
-            "A"
-        };
         let value = remaining
             .map(|value| value.to_string())
             .unwrap_or_else(|| "—".into());
+        let initial = provider.initial();
         let _ = tray.set_title(Some(format!("{initial} {value}%")));
-        let name = if provider == ProviderId::Codex {
-            "Codex"
+        let _ = tray.set_tooltip(Some(format!(
+            "{}: {value}% remaining",
+            provider.display_name()
+        )));
+        if cfg!(target_os = "macos") {
+            let _ = tray.set_icon(None);
         } else {
-            "Claude Code"
-        };
-        let _ = tray.set_tooltip(Some(format!("{name}: {value}% remaining")));
-        let _ = tray.set_icon(Some(tray_image(remaining, provider)));
+            let _ = tray.set_icon(Some(tray_image(remaining, provider)));
+        }
     }
 }
 

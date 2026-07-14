@@ -39,8 +39,8 @@ function formatNumber(value) {
 
 function providerCard(provider) {
   const isCodex = provider.id === "codex";
-  const name = isCodex ? "Codex" : "Claude Code";
-  const initial = isCodex ? "C" : "A";
+  const initial = isCodex ? "C" : "CC";
+  const name = provider.displayName || (isCodex ? "Codex" : "Claude Code");
   const remaining = provider.snapshot?.weekly?.remainingPercent;
   const percentage = remaining == null ? "—" : `${Math.round(remaining)}%`;
   const note = provider.failure === "loginExpired"
@@ -48,6 +48,20 @@ function providerCard(provider) {
     : provider.snapshot
       ? `<span>◈ ${t("providerData")}</span><span>${t("updated")} ${new Intl.DateTimeFormat([], { timeStyle: "short" }).format(new Date(provider.snapshot.fetchedAt))}</span>`
       : `<span>${provider.loading ? t("loading") : t("unavailable")}</span>`;
+
+  let modelRows = "";
+  if (provider.models && provider.models.length > 1) {
+    modelRows = '<div class="model-breakdown">' +
+      provider.models.filter(m => m.modelKey !== "").map(model =>
+        `<div class="model-row">
+          <span class="model-name">${model.displayName}</span>
+          <span class="model-pct">${model.weekly?.remainingPercent != null ? Math.round(model.weekly.remainingPercent) + "%" : "—"}</span>
+          <div class="progress model-progress"><div style="width:${model.weekly?.remainingPercent ?? 0}%;opacity:${model.weekly?.remainingPercent != null ? 0.7 : 0}"></div></div>
+        </div>`
+      ).join("") +
+    '</div>';
+  }
+
   return `<article class="provider-card">
     <div class="card-heading"><span class="badge ${provider.id}">${initial}</span><span>${name}</span><span class="percentage">${percentage}</span></div>
     <div class="progress"><div class="${provider.id}" style="width:${remaining ?? 0}%;opacity:${remaining != null ? 1 : 0}"></div></div>
@@ -55,6 +69,7 @@ function providerCard(provider) {
     <div class="metric"><span>${t("resets")}</span><span>${formatDate(provider.snapshot?.weekly?.resetAt)}</span></div>
     <div class="metric"><span>${t("localTokens")}</span><span>${formatNumber(provider.localTokens)}</span></div>
     <div class="provider-note">${note}</div>
+    ${modelRows}
   </article>`;
 }
 
@@ -94,8 +109,6 @@ document.getElementById("language-picker").addEventListener("click", event => {
 document.getElementById("refresh-icon").addEventListener("click", () => invoke("refresh_usage", { manual: true }));
 document.getElementById("refresh-button").addEventListener("click", () => invoke("refresh_usage", { manual: true }));
 document.getElementById("quit-button").addEventListener("click", () => invoke("quit_app"));
-document.body.addEventListener("mouseenter", () => invoke("set_window_hovered", { hovered: true }));
-document.body.addEventListener("mouseleave", () => invoke("set_window_hovered", { hovered: false }));
 
 await listen("usage-updated", event => { state = event.payload; render(); });
 await load();

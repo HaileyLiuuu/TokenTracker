@@ -21,5 +21,9 @@ A cross-platform macOS menu-bar and Windows system-tray app that keeps Codex and
 5. Claude usage requests are coalesced and throttled to at most once every five minutes. Rate-limit backoff and the last successful snapshot are persisted without credentials so an app restart does not blank the UI or retry early. Snapshots expire at the provider reset time, or after 24 hours when no reset time is available.
 6. macOS and Windows reuse the user's existing provider sign-in state without requiring credentials to be entered into AIUsageBar.
 7. GitHub Releases produce a Universal macOS installer and a Windows x64 installer from the same Tauri/Rust core.
+8. The tray panel opens only on a tray-icon click. Pointer hover over the tray icon never opens, closes, or schedules the closing of the panel; no hover handling exists in the tray, the window, or the web UI.
+9. Clicking the tray icon while the panel is open closes it, and a click anywhere outside the panel closes it. The panel is always focused when shown, because outside-click dismissal is implemented as focus loss; a panel that is shown without focus cannot be dismissed. (Regressed once during the Swift→Tauri port — see commit 334da4e, which added global mouse-down monitoring after NSPopover.transient proved unreliable.)
+10. The macOS tray shows a text title only ("C 12%" / "CC 87%"); Claude Code's label is "CC". Windows renders the drawn tray bitmap because a Windows tray has no text title.
+11. Claude's usage payload is parsed into every seven_day* model window it contains, including tiers unknown at build time, without collapsing them into a single window.
 
-The tray hover/click interaction, outside-click dismissal, and rendered layout are verified in packaged apps because they cross native window-system boundaries.
+The tray click interaction, outside-click dismissal, and rendered layout are verified in packaged apps because they cross native window-system boundaries.

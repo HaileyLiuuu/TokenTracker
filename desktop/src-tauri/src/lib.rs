@@ -21,6 +21,23 @@ pub enum ProviderId {
     Claude,
 }
 
+impl ProviderId {
+    /// Short label shown in the tray. "CC" is Claude Code — never "A".
+    pub fn initial(self) -> &'static str {
+        match self {
+            ProviderId::Codex => "C",
+            ProviderId::Claude => "CC",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ProviderId::Codex => "Codex",
+            ProviderId::Claude => "Claude Code",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
@@ -52,10 +69,24 @@ impl UsageWindow {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    /// Key suffix from the API: "" for the all-models total, else "fable",
+    /// "opus", "sonnet", "haiku", or a tier not yet known at build time.
+    pub model_key: String,
+    pub display_name: String,
+    pub weekly: UsageWindow,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
     pub provider: ProviderId,
     pub weekly: UsageWindow,
     pub fetched_at: DateTime<Utc>,
+    /// Per-model breakdown. Empty for Codex. For Claude, entry 0 is the
+    /// all-models total and `weekly` above is a copy of it.
+    #[serde(default)]
+    pub models: Vec<ModelUsage>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -245,14 +276,8 @@ pub fn parse_codex_usage(
             weekly.limit_window_seconds.map(|seconds| seconds / 60),
         ),
         fetched_at,
+        models: vec![],
     })
-}
-
-#[derive(Deserialize)]
-struct ClaudePayload {
-    seven_day: Option<ClaudeWindow>,
-    seven_day_sonnet: Option<ClaudeWindow>,
-    seven_day_opus: Option<ClaudeWindow>,
 }
 
 #[derive(Deserialize)]
@@ -265,26 +290,73 @@ pub fn parse_claude_usage(
     data: &[u8],
     fetched_at: DateTime<Utc>,
 ) -> Result<UsageSnapshot, UsageError> {
-    let payload: ClaudePayload = serde_json::from_slice(data)?;
-    let weekly = payload
-        .seven_day
-        .or(payload.seven_day_sonnet)
-        .or(payload.seven_day_opus)
-        .ok_or(UsageError::MissingWeeklyWindow)?;
-    let reset_at = weekly
-        .resets_at
-        .map(|value| {
-            DateTime::parse_from_rfc3339(&value)
-                .map(|date| date.with_timezone(&Utc))
-                .map_err(|_| UsageError::InvalidResetTimestamp)
-        })
-        .transpose()?;
+    let raw: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(data)?;
+    let mut models: Vec<ModelUsage> = Vec::new();
+
+    for (key, value) in &raw {
+        if !key.starts_with("seven_day") {
+            continue;
+        }
+        let Ok(window) = serde_json::from_value::<ClaudeWindow>(value.clone()) else {
+            continue;
+        };
+        let model_key = key.strip_prefix("seven_day").unwrap_or(key);
+        let model_key = model_key.strip_prefix('_').unwrap_or(model_key);
+        let display_name = model_display_name(model_key);
+        let reset_at = window
+            .resets_at
+            .as_deref()
+            .map(|value| {
+                DateTime::parse_from_rfc3339(value)
+                    .map(|date| date.with_timezone(&Utc))
+                    .map_err(|_| UsageError::InvalidResetTimestamp)
+            })
+            .transpose()?;
+        models.push(ModelUsage {
+            model_key: model_key.to_string(),
+            display_name,
+            weekly: UsageWindow::new(window.utilization, reset_at, Some(10_080)),
+        });
+    }
+
+    // Sort: all-models total first, then alphabetical by display name
+    models.sort_by(|a, b| {
+        a.model_key
+            .is_empty()
+            .cmp(&b.model_key.is_empty())
+            .reverse()
+            .then_with(|| a.display_name.cmp(&b.display_name))
+    });
+
+    let primary = models.first().ok_or(UsageError::MissingWeeklyWindow)?;
 
     Ok(UsageSnapshot {
         provider: ProviderId::Claude,
-        weekly: UsageWindow::new(weekly.utilization, reset_at, Some(10_080)),
+        weekly: primary.weekly.clone(),
         fetched_at,
+        models,
     })
+}
+
+fn model_display_name(key: &str) -> String {
+    match key {
+        "" => "All models".into(),
+        "fable" => "Fable".into(),
+        "sonnet" => "Sonnet".into(),
+        "opus" => "Opus".into(),
+        "haiku" => "Haiku".into(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut name = first.to_uppercase().collect::<String>();
+                    name.push_str(&chars.collect::<String>());
+                    name
+                }
+            }
+        }
+    }
 }
 
 pub fn scan_codex_tokens(roots: &[PathBuf], cutoff: DateTime<Utc>) -> u64 {

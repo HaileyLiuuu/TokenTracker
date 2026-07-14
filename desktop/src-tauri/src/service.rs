@@ -96,7 +96,12 @@ impl UsageService {
             .into_iter()
             .map(|(id, snapshot)| ProviderView {
                 id,
-                snapshot,
+                display_name: id.display_name().to_string(),
+                snapshot: snapshot.clone(),
+                models: snapshot
+                    .as_ref()
+                    .map(|s| s.models.clone())
+                    .unwrap_or_default(),
                 local_tokens: None,
                 failure: None,
                 loading: true,
@@ -166,9 +171,15 @@ impl UsageService {
         let local_tokens = tokio::task::spawn_blocking(move || scan_codex_tokens(&roots, cutoff))
             .await
             .ok();
+        let models = snapshot
+            .as_ref()
+            .map(|s| s.models.clone())
+            .unwrap_or_default();
         ProviderView {
             id: ProviderId::Codex,
-            snapshot,
+            display_name: ProviderId::Codex.display_name().to_string(),
+            snapshot: snapshot.clone(),
+            models,
             local_tokens,
             failure: result.err().map(|error| failure_code(&error)),
             loading: false,
@@ -192,9 +203,15 @@ impl UsageService {
         let local_tokens = tokio::task::spawn_blocking(move || scan_claude_tokens(&roots, cutoff))
             .await
             .ok();
+        let models = snapshot
+            .as_ref()
+            .map(|s| s.models.clone())
+            .unwrap_or_default();
         ProviderView {
             id: ProviderId::Claude,
-            snapshot,
+            display_name: ProviderId::Claude.display_name().to_string(),
+            snapshot: snapshot.clone(),
+            models,
             local_tokens,
             failure: result.err().map(|error| failure_code(&error)),
             loading: false,
