@@ -67,7 +67,6 @@ function providerCard(provider) {
   let tierHtml = "";
   if (!isCodex && provider.snapshot) {
     tierHtml += tierSection(t("currentSession"), provider.session, provider.localTokens);
-    tierHtml += tierSection(t("allModels"), provider.snapshot.weekly, provider.localTokens);
     if (provider.models) {
       provider.models.filter(m => m.modelKey !== "").forEach(m => {
         tierHtml += tierSection(m.displayName, m.weekly, provider.localTokens);
