@@ -4,6 +4,8 @@
 
 [English](#english) | [下载](https://github.com/HaileyLiuuu/TokenTracker/releases) | [隐私](PRIVACY.md)
 
+![TokenTracker panel](assets/screenshot.png)
+
 TokenTracker 在 macOS 菜单栏（或 Windows 系统托盘）显示 Codex 和 Claude Code 的剩余用量百分比。不打开网页，不翻设置页，扫一眼就知道还剩多少。
 
 ---
