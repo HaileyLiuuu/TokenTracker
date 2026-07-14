@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIUsageBar</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main class="panel">
+      <header>
+        <div>
+          <h1 data-i18n="usage">Usage</h1>
+          <p data-i18n="weeklyUsage">Weekly usage</p>
+        </div>
+        <button id="refresh-icon" class="icon-button" aria-label="Refresh">↻</button>
+      </header>
+
+      <section class="setting-row">
+        <span data-i18n="primary">Primary</span>
+        <div class="segmented" id="provider-picker">
+          <button data-provider="codex">Codex</button>
+          <button data-provider="claude">Claude Code</button>
+        </div>
+      </section>
+
+      <section id="provider-cards" class="cards" aria-live="polite"></section>
+
+      <footer>
+        <section class="setting-row">
+          <span data-i18n="language">Language</span>
+          <div class="segmented compact" id="language-picker">
+            <button data-language="zh-Hans">中文</button>
+            <button data-language="en">English</button>
+          </div>
+        </section>
+        <div class="footer-actions">
+          <button id="refresh-button" data-i18n="refresh">Refresh now</button>
+          <button id="quit-button" data-i18n="quit">Quit AIUsageBar</button>
+        </div>
+      </footer>
+    </main>
+  </body>
+</html>

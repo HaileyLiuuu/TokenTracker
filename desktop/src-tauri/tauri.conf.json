@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AIUsageBar",
+  "version": "0.1.0",
+  "identifier": "com.haileyliu.aiusagebar",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "AIUsageBar",
+        "width": 370,
+        "height": 610,
+        "visible": false,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Codex and Claude Code weekly usage in your menu bar or system tray.",
+    "longDescription": "AIUsageBar shows real Codex and Claude Code weekly usage, reset time, and local seven-day token totals.",
+    "copyright": "Copyright © 2026 Hailey Liu",
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": null
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

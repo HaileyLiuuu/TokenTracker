@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  desktop-core:
+    name: Desktop core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Check formatting
+        working-directory: desktop/src-tauri
+        run: cargo fmt --check
+      - name: Test cross-platform core
+        working-directory: desktop/src-tauri
+        run: cargo test --tests
+      - name: Lint
+        working-directory: desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+  swift-regression:
+    name: Existing macOS regression suite
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run existing core tests
+        run: swift run AIUsageBarCoreTests

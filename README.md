@@ -1,50 +1,63 @@
 # AIUsageBar
 
-一个原生 macOS 菜单栏工具，把 Codex 和 Claude Code 的用量放到随时可见的位置。
+AIUsageBar is a compact menu-bar and system-tray utility for real Codex and Claude Code weekly usage.
 
-## 当前测试版
+## What users get
 
-- 菜单栏显示主服务的精简进度条与剩余百分比。
-- 鼠标悬停或点击菜单栏项目后，展开完整面板。
-- 面板同时显示 Codex 和 Claude Code 的剩余百分比、下次重置时间及本机 7 天 Token。
-- 可选择 Codex 或 Claude Code 作为主显示项。
-- 可在中文和英文之间切换。
-- 每分钟触发界面刷新；Codex 会更新官方配额，Claude 官方接口最多每 5 分钟请求一次，并按服务端要求退避。并发刷新会合并为一次请求，悬停打开时如果数据超过 30 秒也会触发刷新。
+- A compact remaining-usage progress indicator and percentage in the macOS menu bar or Windows system tray.
+- A click or hover panel showing Codex and Claude Code remaining percentage, reset time, and local seven-day tokens.
+- A selectable primary provider and Chinese/English interface.
+- Automatic refresh with Claude request coalescing, five-minute throttling, `Retry-After` support, and last-known-good data during rate limits.
 
-## 数据来源
+## Supported systems
 
-- **Codex 配额**：读取本机 `~/.codex/auth.json` 的现有登录态，请求 Codex Usage 页面自身使用的 `/backend-api/wham/usage` 接口。应用不会保存令牌，也不会把令牌发送给 OpenAI 之外的服务。
-- **Claude Code 配额**：读取 macOS Keychain 中现有的 `Claude Code-credentials` 登录态，并请求 Claude Code 自身使用的 usage 接口。登录态只在当前 App 进程的内存中复用，不会写入文件或另行保存。为了避免接口限流导致界面变空，应用会在 UserDefaults 中保存最后一次成功的用量百分比、重置时间、更新时间和接口退避截止时间；其中不包含任何 Token 或登录凭据。快照会在服务重置后失效；若接口没有提供重置时间，则最多保留 24 小时。
-- **Token**：从 `~/.codex` 和 `~/.claude` 的本机 JSONL 日志统计，并明确标为“本机 7 天 Token”；它不是跨设备的官方账户 Token 总量。
+- macOS 13 or later, Apple Silicon and Intel (Universal build).
+- Windows 10 or 11, x64.
 
-如果 Claude Code 显示“请先在 Claude Code 中重新登录”，请在终端运行 `claude`，使用 `/login` 完成登录，再回到 AIUsageBar 点击“立即刷新”。首次读取 Claude Code 登录态时，macOS 可能弹出钥匙串授权提示；自动刷新会复用内存中的登录态，不会每分钟重复访问钥匙串。若 App 被重新构建或替换，macOS 仍可能要求对新版本重新授权一次。
+Users need to be signed in to Codex or Claude Code on the same computer for that provider's account quota to appear. One provider can be unavailable while the other remains fully usable. On macOS, the first Claude Code read may show one Keychain authorization prompt; choose **Always Allow** so automatic refresh does not ask again.
 
-## 构建和运行
+AIUsageBar does not make model requests and does not consume Codex or Claude tokens. See [PRIVACY.md](PRIVACY.md) for exactly what it reads, sends, and stores.
 
-要求：macOS 14+、Swift 6.2+、已安装 Codex CLI；Claude Code 为可选，但未安装或未登录时会显示不可用状态。
+## Data sources
+
+- **Codex quota:** reuses the existing Codex login and requests the same weekly-usage backend used by the Codex Usage screen.
+- **Claude Code quota:** reuses the existing Claude Code OAuth login and requests Claude Code's usage endpoint.
+- **Local tokens:** scans token-count fields in local Codex and Claude Code JSONL logs. This is explicitly a local seven-day total, not an account-wide cross-device total.
+
+Provider usage endpoints can change because they are not documented as stable third-party APIs. The parser and live integration test isolate that maintenance risk.
+
+## Install from GitHub Releases
+
+After the first signed release:
+
+1. Download the macOS `.dmg` or Windows installer from Releases.
+2. Install and launch AIUsageBar.
+3. Authorize Claude Code credential access once if the operating system asks.
+4. Select the primary provider and language in the panel.
+
+No API keys or usage limits need to be entered manually.
+
+## Build the cross-platform app
+
+Requirements: Node.js 22+, Rust stable, and the platform prerequisites documented by Tauri 2.
 
 ```bash
-./scripts/run-app.sh
+cd desktop
+npm install
+npm run tauri dev
 ```
 
-生成的测试应用位于：
+Cross-platform core tests:
 
-```text
-dist/AIUsageBar.app
+```bash
+cd desktop/src-tauri
+cargo test --tests
 ```
 
-核心测试：
+The previous Swift/AppKit macOS implementation remains in `Sources/` while the Tauri version is validated by users. Its regression suite is:
 
 ```bash
 swift run AIUsageBarCoreTests
 ```
 
-包含 Codex Usage 页面同源接口的真实集成测试：
-
-```bash
-AIUSAGEBAR_LIVE_TESTS=1 swift run AIUsageBarCoreTests
-```
-
-## 发布前待办
-
-当前版本采用本地 ad-hoc 签名，适合本人测试。发布 GitHub 前需要确定开源许可证，并完成 Developer ID 签名、notarization、版本化安装包及隐私说明。
+Release signing and GitHub Actions secrets are documented in [RELEASING.md](RELEASING.md).

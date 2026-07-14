@@ -2,7 +2,7 @@
 
 ## Goal
 
-A native macOS menu-bar app that keeps Codex and Claude Code plan usage visible without opening their deeper usage screens.
+A cross-platform macOS menu-bar and Windows system-tray app that keeps Codex and Claude Code plan usage visible without opening their deeper usage screens.
 
 ## Domain vocabulary
 
@@ -19,5 +19,7 @@ A native macOS menu-bar app that keeps Codex and Claude Code plan usage visible 
 3. Local Codex and Claude logs produce a bounded local-token total without decoding, retaining, or transmitting prompt fields.
 4. A Claude usage client reads Keychain credentials at most once per app session unless the user explicitly retries after an authentication failure.
 5. Claude usage requests are coalesced and throttled to at most once every five minutes. Rate-limit backoff and the last successful snapshot are persisted without credentials so an app restart does not blank the UI or retry early. Snapshots expire at the provider reset time, or after 24 hours when no reset time is available.
+6. macOS and Windows reuse the user's existing provider sign-in state without requiring credentials to be entered into AIUsageBar.
+7. GitHub Releases produce a Universal macOS installer and a Windows x64 installer from the same Tauri/Rust core.
 
-The menu-bar hover/click interaction, outside-click dismissal, and rendered layout are verified in the packaged app because they cross AppKit window-system boundaries.
+The tray hover/click interaction, outside-click dismissal, and rendered layout are verified in packaged apps because they cross native window-system boundaries.
