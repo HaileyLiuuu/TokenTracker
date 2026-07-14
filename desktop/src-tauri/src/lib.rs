@@ -319,6 +319,48 @@ pub fn parse_claude_usage(
         });
     }
 
+    // Also source per-model entries from the limits array.
+    // Each limit entry with kind "weekly_scoped" carries a model display_name
+    // and a percent that maps to our usage window alongside the weekly window
+    // timestamps already captured from the seven_day total.
+    if let Some(limits) = raw.get("limits").and_then(|v| v.as_array()) {
+        for limit in limits {
+            let kind = limit.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            if kind != "weekly_scoped" {
+                continue;
+            }
+            let display_name = limit
+                .get("scope")
+                .and_then(|v| v.get("model"))
+                .and_then(|v| v.get("display_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if display_name.is_empty() {
+                continue;
+            }
+            let percent = limit.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let model_key = display_name.to_lowercase();
+            // Don't duplicate if already present from a seven_day_* window
+            if models.iter().any(|m| m.model_key == model_key) {
+                continue;
+            }
+            let model_reset_at = limit
+                .get("resets_at")
+                .and_then(|v| v.as_str())
+                .map(|value| {
+                    DateTime::parse_from_rfc3339(value)
+                        .map(|date| date.with_timezone(&Utc))
+                        .map_err(|_| UsageError::InvalidResetTimestamp)
+                })
+                .transpose()?;
+            models.push(ModelUsage {
+                model_key,
+                display_name: display_name.to_string(),
+                weekly: UsageWindow::new(percent, model_reset_at, Some(10_080)),
+            });
+        }
+    }
+
     // Sort: all-models total first, then alphabetical by display name
     models.sort_by(|a, b| {
         a.model_key

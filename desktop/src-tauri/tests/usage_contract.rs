@@ -57,6 +57,47 @@ fn claude_per_model_windows_are_extracted_as_model_usage_entries() {
 }
 
 #[test]
+fn limits_array_with_weekly_scoped_entries_adds_model_rows() {
+    let fetched_at = Utc.with_ymd_and_hms(2026, 7, 13, 8, 0, 0).unwrap();
+    let snapshot = parse_claude_usage(
+        br#"{"seven_day":{"utilization":14,"resets_at":"2026-07-17T12:00:00Z"},"limits":[{"kind":"session","group":"session","percent":7,"resets_at":"2026-07-14T05:20:00Z","scope":null,"is_active":false},{"kind":"weekly_all","group":"weekly","percent":14,"resets_at":"2026-07-17T12:00:00Z","scope":null,"is_active":false},{"kind":"weekly_scoped","group":"weekly","percent":24,"resets_at":"2026-07-17T12:00:00Z","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null},"is_active":true}]}"#,
+        fetched_at,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.weekly.remaining_percent, 86.0); // 100-14
+    assert_eq!(snapshot.models.len(), 2);
+
+    assert_eq!(snapshot.models[0].model_key, "");
+    assert_eq!(snapshot.models[0].display_name, "All models");
+
+    assert_eq!(snapshot.models[1].model_key, "fable");
+    assert_eq!(snapshot.models[1].display_name, "Fable");
+    assert_eq!(snapshot.models[1].weekly.remaining_percent, 76.0); // 100-24
+}
+
+#[test]
+fn limits_weekly_scoped_does_not_duplicate_existing_seven_day_entry() {
+    let fetched_at = Utc.with_ymd_and_hms(2026, 7, 13, 8, 0, 0).unwrap();
+    // seven_day_sonnet already provides Sonnet; a limits weekly_scoped for Sonnet
+    // must not create a duplicate entry.
+    let snapshot = parse_claude_usage(
+        br#"{"seven_day":{"utilization":14,"resets_at":"2026-07-17T12:00:00Z"},"seven_day_sonnet":{"utilization":15,"resets_at":"2026-07-17T12:00:00Z"},"limits":[{"kind":"weekly_scoped","percent":15,"resets_at":"2026-07-17T12:00:00Z","scope":{"model":{"display_name":"Sonnet"}},"is_active":true}]}"#,
+        fetched_at,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.models.len(), 2);
+    // Sonnet is the seven_day_sonnet entry, not duplicated from limits
+    let sonnet_entries: Vec<_> = snapshot
+        .models
+        .iter()
+        .filter(|m| m.display_name == "Sonnet")
+        .collect();
+    assert_eq!(sonnet_entries.len(), 1);
+}
+
+#[test]
 fn unknown_model_tier_gets_title_case_fallback_name() {
     let fetched_at = Utc.with_ymd_and_hms(2026, 7, 13, 8, 0, 0).unwrap();
     let snapshot = parse_claude_usage(
