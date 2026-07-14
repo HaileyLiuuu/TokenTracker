@@ -9,7 +9,7 @@ const copy = {
     refresh: "Refresh now", quit: "Quit TokenTracker", providerData: "Provider data",
     updated: "Updated", loading: "Loading…", unavailable: "Unavailable",
     signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code",
-    currentSession: "Current session", currentWeekLabel: "CURRENT WEEK", weeklyAllLabel: "Current week (all models)", allModels: "All models",
+    currentSession: "CURRENT SESSION", currentWeekLabel: "Current week", weeklyAllLabel: "Current week (all models)", allModels: "All models",
     refreshLabel: "REFRESH NOW", quitLabel: "QUIT APP"
   },
   "zh-Hans": {
