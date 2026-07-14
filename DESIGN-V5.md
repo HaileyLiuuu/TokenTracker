@@ -28,9 +28,10 @@ BECOME the hero.
 
 ## 2. What to change
 
-Only one file: `desktop/ui/app.js`. The `providerCard()` function.
+Only one file: `desktop/ui/app.js`. The `providerCard()` function and the
+`copy` i18n objects.
 
-### 2.1 Claude hero: source from `provider.session`
+### 2.1 Claude hero: source from `provider.session` + label change
 
 For Claude cards only, the hero percentage, progress bar, and meta data
 (reset time, local tokens) must come from `provider.session` (five_hour).
@@ -42,25 +43,49 @@ degradation pattern already used elsewhere in the app.
 For Codex cards: unchanged. Codex has no session data, so hero stays on
 `provider.snapshot?.weekly`.
 
-### 2.2 Tier sections: swap session and all-models
+**Hero label change:** The hero grid currently shows `t("remaining")` ("REMAINING")
+as the hero label below the percentage. For Claude cards, change this to
+`t("currentSession")` ("CURRENT SESSION"). For Codex, keep `t("remaining")`.
+
+### 2.2 Tier sections: use new label `weeklyAllLabel`
 
 Current tier order (lines 73-79):
 ```
 renderTier(t("currentSession"), provider.session, ...)
-// then per-model tiers from provider.models
+// then per-model tiers
 ```
 
 New tier order:
 ```
-renderTier(t("allModels"), provider.snapshot.weekly, ...)
-// then per-model tiers from provider.models (unchanged)
+renderTier(t("weeklyAllLabel"), provider.snapshot.weekly, ...)
+// then per-model tiers (unchanged)
 ```
 
-`t("allModels")` = "All models" / "所有模型" — existing i18n key.
-`t("currentSession")` stays in the copy object but is no longer used in
-`providerCard()` (the hero IS the session now).
+The first tier row shows "Current week (all models)" — matching Claude Code's
+own `/usage` output which labels this tier as "Current week (all models)".
 
-### 2.3 Pseudocode for the Claude branch
+**New i18n keys required:**
+
+```js
+// copy.en — add:
+weeklyAllLabel: "Current week (all models)",
+
+// copy["zh-Hans"] — add:
+weeklyAllLabel: "本周用量（所有模型）",
+```
+
+The existing `allModels` key stays (keeps code tidy) but is no longer used by
+`providerCard()`.
+
+### 2.3 Full label mapping for Claude card
+
+| Visual element | Data source | i18n key | English | 中文 |
+|---|---|---|---|---|
+| Hero % label | `provider.session` | `currentSession` | CURRENT SESSION | 当前会话 |
+| Tier 1 heading | `provider.snapshot.weekly` | `weeklyAllLabel` | Current week (all models) | 本周用量（所有模型） |
+| Tier 2+ heading | `provider.models[i]` | `m.displayName` | Fable etc. | Fable etc. |
+
+### 2.4 Pseudocode for the Claude branch
 
 ```js
 function providerCard(provider, index) {
@@ -71,11 +96,13 @@ function providerCard(provider, index) {
   const heroWindow = (!isCodex && provider.session) || provider.snapshot?.weekly;
   const heroRemaining = heroWindow?.remainingPercent;
   const heroPct = heroRemaining != null ? Math.round(heroRemaining) + "%" : "—";
+  // Claude hero label = "CURRENT SESSION", Codex = "REMAINING"
+  const heroLabelKey = !isCodex ? "currentSession" : "remaining";
 
-  // Tier sections (Claude only): allModels first, then per-model
+  // Tier sections (Claude only)
   let tierHtml = "";
   if (!isCodex && provider.snapshot) {
-    tierHtml += renderTier(t("allModels"), provider.snapshot.weekly, provider.localTokens);
+    tierHtml += renderTier(t("weeklyAllLabel"), provider.snapshot.weekly, provider.localTokens);
     if (provider.models) {
       provider.models.filter(m => m.modelKey !== "").forEach(m => {
         tierHtml += renderTier(m.displayName, m.weekly, provider.localTokens);
@@ -84,6 +111,7 @@ function providerCard(provider, index) {
   }
 
   // HTML: hero grid uses heroWindow.remainingPercent and heroWindow.resetAt
+  // hero-label div uses t(heroLabelKey) instead of hardcoded t("remaining")
   // Progress bar uses heroRemaining
 }
 ```
@@ -100,16 +128,17 @@ The data path is complete and correct.
 After building:
 
 1. Click tray icon → Claude card shows.
-2. **Hero number** = session remaining % (from five_hour, e.g. 93%).
-   Progress bar and meta (reset time, local tokens) match the session window.
-3. **First tier row** = "All models" (weekly total, e.g. 86%).
-4. **Subsequent tier rows** = per-model (Fable, etc.).
-5. Codex card is completely unchanged.
-6. If `provider.session` is null, card falls back to weekly data — never blanks.
+2. **Hero label** = "CURRENT SESSION" / "当前会话" (not "REMAINING").
+3. **Hero number** = session remaining % (from five_hour, e.g. 93%).
+4. **First tier row** = "Current week (all models)" / "本周用量（所有模型）" (weekly total, e.g. 86%).
+5. **Subsequent tier rows** = per-model (Fable, etc.).
+6. Codex card is completely unchanged (hero label still "REMAINING").
+7. If `provider.session` is null, card falls back to weekly data — never blanks.
 
 ## 5. Standing constraints
 
 - Single file change (`app.js`). No Rust, no CSS, no HTML.
+- New i18n keys `weeklyAllLabel` added to both `en` and `zh-Hans` copy objects.
 - Commit only `app.js`.
 - Never `git reset`, `git clean`, `git checkout --`.
 - Never make model API calls to test quota display.
