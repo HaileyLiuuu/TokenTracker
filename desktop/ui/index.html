@@ -9,36 +9,46 @@
   </head>
   <body>
     <main class="panel">
-      <header>
-        <div>
-          <h1 data-i18n="usage">Usage</h1>
-          <p data-i18n="weeklyUsage">Weekly usage</p>
+      <!-- ===== HEADER ===== -->
+      <header class="editorial-header">
+        <div class="header-left">
+          <h1 class="display-heading" data-i18n="usage">USAGE</h1>
+          <p class="header-subtitle">· <span data-i18n="weeklyUsage">WEEKLY USAGE</span></p>
         </div>
-        <button id="refresh-icon" class="icon-button" aria-label="Refresh">↻</button>
+        <div class="header-right">
+          <span class="header-index" id="header-index">01 / 02</span>
+          <span class="header-arrow">↗</span>
+        </div>
       </header>
 
-      <section class="setting-row">
-        <span data-i18n="primary">Primary</span>
-        <div class="segmented" id="provider-picker">
-          <button data-provider="codex">Codex</button>
-          <button data-provider="claude">Claude Code</button>
-        </div>
-      </section>
+      <!-- ===== PROVIDER TABS ===== -->
+      <div class="tab-bar" id="provider-picker">
+        <button class="tab" data-provider="codex" id="tab-codex">CODEX</button>
+        <button class="tab" data-provider="claude" id="tab-claude">CLAUDE CODE</button>
+      </div>
 
-      <section id="provider-cards" class="cards" aria-live="polite"></section>
+      <!-- ===== CARDS CONTAINER ===== -->
+      <div class="cards" id="provider-cards" aria-live="polite">
+        <!-- Populated by app.js: providerCard() -->
+      </div>
 
-      <footer>
-        <section class="setting-row">
-          <span data-i18n="language">Language</span>
-          <div class="segmented compact" id="language-picker">
-            <button data-language="zh-Hans">中文</button>
-            <button data-language="en">English</button>
+      <!-- ===== FOOTER ===== -->
+      <footer class="footer-strip">
+        <div class="footer-module" id="language-picker">
+          <span class="footer-label" data-i18n="language">LANGUAGE</span>
+          <div class="footer-buttons">
+            <button class="footer-btn" data-language="zh-Hans">中文</button>
+            <button class="footer-btn" data-language="en">EN</button>
           </div>
-        </section>
-        <div class="footer-actions">
-          <button id="refresh-button" data-i18n="refresh">Refresh now</button>
-          <button id="quit-button" data-i18n="quit">Quit AIUsageBar</button>
         </div>
+        <button class="footer-module footer-refresh" id="refresh-button">
+          <span class="footer-label">REFRESH<br>NOW</span>
+          <span class="refresh-icon" id="refresh-icon">↻</span>
+        </button>
+        <button class="footer-module footer-quit" id="quit-button">
+          <span class="footer-label">QUIT<br>APP</span>
+          <span class="quit-icon">↗</span>
+        </button>
       </footer>
     </main>
   </body>

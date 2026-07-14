@@ -12,8 +12,8 @@
       {
         "label": "main",
         "title": "AIUsageBar",
-        "width": 370,
-        "height": 610,
+        "width": 400,
+        "height": 740,
         "visible": false,
         "resizable": false,
         "maximizable": false,

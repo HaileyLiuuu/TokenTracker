@@ -39,50 +39,67 @@ function formatNumber(value) {
   return value == null ? "—" : new Intl.NumberFormat(state.settings.language === "zh-Hans" ? "zh-CN" : "en-US").format(value);
 }
 
-function tierSection(label, w, localTokens) {
+function renderTier(label, w, localTokens) {
   if (!w) return "";
   const r = w.remainingPercent;
   const pct = r != null ? Math.round(r) + "%" : "—";
   return `<div class="tier-section">
     <div class="tier-heading">${label}</div>
-    <div class="metric"><span>${t("remaining")}</span><span>${pct}</span></div>
-    <div class="metric"><span>${t("resets")}</span><span>${formatDate(w.resetAt)}</span></div>
-    <div class="metric"><span>${t("localTokens")}</span><span>${formatNumber(localTokens)}</span></div>
-    <div class="progress tier-progress"><div style="width:${r ?? 0}%;opacity:${r != null ? 1 : 0}"></div></div>
+    <div class="tier-row"><span class="tier-label">${t("remaining")}</span><span class="tier-value">${pct}</span></div>
+    <div class="tier-row"><span class="tier-label">${t("resets")}</span><span class="tier-value" style="font-size:14px">${formatDate(w.resetAt)}</span></div>
+    <div class="tier-row"><span class="tier-label">${t("localTokens")}</span><span class="tier-value" style="font-size:14px">${formatNumber(localTokens)}</span></div>
+    <div class="tier-progress"><div class="tier-progress-fill" style="width:${r ?? 0}%;opacity:${r != null ? 1 : 0}"></div></div>
   </div>`;
 }
 
-function providerCard(provider) {
+function providerCard(provider, index) {
   const isCodex = provider.id === "codex";
-  const initial = isCodex ? "C" : "CC";
+  const cls = provider.id;
   const name = provider.displayName || (isCodex ? "Codex" : "Claude Code");
+  const initial = isCodex ? "C" : "CC";
   const remaining = provider.snapshot?.weekly?.remainingPercent;
-  const percentage = remaining == null ? "—" : `${Math.round(remaining)}%`;
+  const pct = remaining != null ? Math.round(remaining) : null;
+  const heroPct = pct != null ? pct + "%" : "—";
+
   const note = provider.failure === "loginExpired"
-    ? `<button class="setup-link" data-setup="${provider.id}">${isCodex ? t("signInCodex") : t("signInClaude")}</button>`
+    ? `<button class="setup-link" data-setup="${cls}">${isCodex ? t("signInCodex") : t("signInClaude")}</button>`
     : provider.snapshot
       ? `<span>◈ ${t("providerData")}</span><span>${t("updated")} ${new Intl.DateTimeFormat([], { timeStyle: "short" }).format(new Date(provider.snapshot.fetchedAt))}</span>`
       : `<span>${provider.loading ? t("loading") : t("unavailable")}</span>`;
 
   let tierHtml = "";
   if (!isCodex && provider.snapshot) {
-    tierHtml += tierSection(t("currentSession"), provider.session, provider.localTokens);
+    tierHtml += renderTier(t("currentSession"), provider.session, provider.localTokens);
     if (provider.models) {
       provider.models.filter(m => m.modelKey !== "").forEach(m => {
-        tierHtml += tierSection(m.displayName, m.weekly, provider.localTokens);
+        tierHtml += renderTier(m.displayName, m.weekly, provider.localTokens);
       });
     }
   }
 
-  return `<article class="provider-card">
-    <div class="card-heading"><span class="badge ${provider.id}">${initial}</span><span>${name}</span><span class="percentage">${percentage}</span></div>
-    <div class="progress"><div class="${provider.id}" style="width:${remaining ?? 0}%;opacity:${remaining != null ? 1 : 0}"></div></div>
-    <div class="metric"><span>${t("remaining")}</span><span>${percentage}</span></div>
-    <div class="metric"><span>${t("resets")}</span><span>${formatDate(provider.snapshot?.weekly?.resetAt)}</span></div>
-    <div class="metric"><span>${t("localTokens")}</span><span>${formatNumber(provider.localTokens)}</span></div>
-    <div class="provider-note">${note}</div>
+  return `<section class="provider-panel ${cls}">
+    <div class="provider-identity">
+      <div class="provider-badge">${initial}</div>
+      <span class="provider-name">${name}</span>
+      <span class="provider-index">${String(index + 1).padStart(2, "0")} ↗</span>
+    </div>
+    <div class="provider-hero">
+      <div class="hero-pct">${heroPct}</div>
+      <div class="meta-stack">
+        <span class="meta-label">${t("resets")}</span>
+        <span class="meta-value">${formatDate(provider.snapshot?.weekly?.resetAt)}</span>
+      </div>
+      <div class="hero-label">${t("remaining")}</div>
+      <div class="meta-stack">
+        <span class="meta-label">${t("localTokens")}</span>
+        <span class="meta-value">${formatNumber(provider.localTokens)}</span>
+      </div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${remaining ?? 0}%;opacity:${remaining != null ? 1 : 0}"></div></div>
+    <div class="progress-labels"><span>0%</span><span>50%</span><span>100%</span></div>
     ${tierHtml}
-  </article>`;
+    <div class="provider-note">${note}</div>
+  </section>`;
 }
 
 function render() {
@@ -91,12 +108,14 @@ function render() {
   document.querySelectorAll("[data-provider]").forEach(button => button.classList.toggle("active", button.dataset.provider === state.settings.primaryProvider));
   document.querySelectorAll("[data-language]").forEach(button => button.classList.toggle("active", button.dataset.language === state.settings.language));
   document.getElementById("provider-cards").innerHTML = state.providers.map(providerCard).join("");
+  const primaryIdx = state.providers.findIndex(p => p.id === state.settings.primaryProvider);
+  document.getElementById("header-index").textContent =
+    (primaryIdx >= 0 ? String(primaryIdx + 1).padStart(2, "0") : "01") + " / 02";
   document.querySelectorAll("[data-setup]").forEach(button => button.addEventListener("click", () => {
     openUrl(button.dataset.setup === "codex" ? "https://developers.openai.com/codex/cli" : "https://docs.anthropic.com/en/docs/claude-code/getting-started");
   }));
   const icon = document.getElementById("refresh-icon");
   icon.classList.toggle("spinning", state.refreshing);
-  icon.disabled = state.refreshing;
   document.getElementById("refresh-button").disabled = state.refreshing;
 }
 
