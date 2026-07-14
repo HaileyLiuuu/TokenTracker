@@ -8,14 +8,16 @@ const copy = {
     remaining: "Remaining", resets: "Resets", localTokens: "Local 7-day tokens",
     refresh: "Refresh now", quit: "Quit AIUsageBar", providerData: "Provider data",
     updated: "Updated", loading: "Loading…", unavailable: "Unavailable",
-    signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code"
+    signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code",
+    currentSession: "Current session", allModels: "All models"
   },
   "zh-Hans": {
     usage: "用量", weeklyUsage: "每周用量", primary: "主显示", language: "界面语言",
     remaining: "剩余", resets: "下次重置", localTokens: "本机 7 天 Token",
     refresh: "立即刷新", quit: "退出 AIUsageBar", providerData: "服务官方数据",
     updated: "最后更新", loading: "正在读取…", unavailable: "暂不可用",
-    signInCodex: "登录 Codex", signInClaude: "登录 Claude Code"
+    signInCodex: "登录 Codex", signInClaude: "登录 Claude Code",
+    currentSession: "当前会话", allModels: "所有模型"
   }
 };
 
@@ -37,6 +39,19 @@ function formatNumber(value) {
   return value == null ? "—" : new Intl.NumberFormat(state.settings.language === "zh-Hans" ? "zh-CN" : "en-US").format(value);
 }
 
+function tierSection(label, w, localTokens) {
+  if (!w) return "";
+  const r = w.remainingPercent;
+  const pct = r != null ? Math.round(r) + "%" : "—";
+  return `<div class="tier-section">
+    <div class="tier-heading">${label}</div>
+    <div class="metric"><span>${t("remaining")}</span><span>${pct}</span></div>
+    <div class="metric"><span>${t("resets")}</span><span>${formatDate(w.resetAt)}</span></div>
+    <div class="metric"><span>${t("localTokens")}</span><span>${formatNumber(localTokens)}</span></div>
+    <div class="progress tier-progress"><div style="width:${r ?? 0}%;opacity:${r != null ? 1 : 0}"></div></div>
+  </div>`;
+}
+
 function providerCard(provider) {
   const isCodex = provider.id === "codex";
   const initial = isCodex ? "C" : "CC";
@@ -49,17 +64,15 @@ function providerCard(provider) {
       ? `<span>◈ ${t("providerData")}</span><span>${t("updated")} ${new Intl.DateTimeFormat([], { timeStyle: "short" }).format(new Date(provider.snapshot.fetchedAt))}</span>`
       : `<span>${provider.loading ? t("loading") : t("unavailable")}</span>`;
 
-  let modelRows = "";
-  if (provider.models && provider.models.length > 1) {
-    modelRows = '<div class="model-breakdown">' +
-      provider.models.filter(m => m.modelKey !== "").map(model =>
-        `<div class="model-row">
-          <span class="model-name">${model.displayName}</span>
-          <span class="model-pct">${model.weekly?.remainingPercent != null ? Math.round(model.weekly.remainingPercent) + "%" : "—"}</span>
-          <div class="progress model-progress"><div style="width:${model.weekly?.remainingPercent ?? 0}%;opacity:${model.weekly?.remainingPercent != null ? 0.7 : 0}"></div></div>
-        </div>`
-      ).join("") +
-    '</div>';
+  let tierHtml = "";
+  if (!isCodex && provider.snapshot) {
+    tierHtml += tierSection(t("currentSession"), provider.session, provider.localTokens);
+    tierHtml += tierSection(t("allModels"), provider.snapshot.weekly, provider.localTokens);
+    if (provider.models) {
+      provider.models.filter(m => m.modelKey !== "").forEach(m => {
+        tierHtml += tierSection(m.displayName, m.weekly, provider.localTokens);
+      });
+    }
   }
 
   return `<article class="provider-card">
@@ -69,7 +82,7 @@ function providerCard(provider) {
     <div class="metric"><span>${t("resets")}</span><span>${formatDate(provider.snapshot?.weekly?.resetAt)}</span></div>
     <div class="metric"><span>${t("localTokens")}</span><span>${formatNumber(provider.localTokens)}</span></div>
     <div class="provider-note">${note}</div>
-    ${modelRows}
+    ${tierHtml}
   </article>`;
 }
 

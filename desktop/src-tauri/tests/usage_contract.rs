@@ -111,3 +111,34 @@ fn unknown_model_tier_gets_title_case_fallback_name() {
     assert_eq!(snapshot.models[1].display_name, "Futuremodel");
     assert_eq!(snapshot.models[1].weekly.remaining_percent, 80.0);
 }
+
+#[test]
+fn five_hour_session_window_is_parsed_from_claude_payload() {
+    let fetched_at = Utc.with_ymd_and_hms(2026, 7, 13, 8, 0, 0).unwrap();
+    let snapshot = parse_claude_usage(
+        br#"{"seven_day":{"utilization":14,"resets_at":"2026-07-17T12:00:00Z"},"five_hour":{"utilization":7,"resets_at":"2026-07-14T05:20:00Z"},"limits":[{"kind":"weekly_scoped","percent":24,"resets_at":"2026-07-17T12:00:00Z","scope":{"model":{"display_name":"Fable"}},"is_active":true}]}"#,
+        fetched_at,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.weekly.remaining_percent, 86.0);
+    assert_eq!(snapshot.models.len(), 2);
+
+    let session = snapshot.session.expect("five_hour should populate session");
+    assert_eq!(session.remaining_percent, 93.0); // 100-7
+    assert_eq!(session.duration_minutes, Some(300));
+    assert!(session.reset_at.is_some());
+}
+
+#[test]
+fn missing_five_hour_produces_session_none() {
+    let fetched_at = Utc.with_ymd_and_hms(2026, 7, 13, 8, 0, 0).unwrap();
+    let snapshot = parse_claude_usage(
+        br#"{"seven_day":{"utilization":42,"resets_at":"2026-07-20T08:00:00Z"}}"#,
+        fetched_at,
+    )
+    .unwrap();
+
+    assert_eq!(snapshot.weekly.remaining_percent, 58.0);
+    assert!(snapshot.session.is_none());
+}

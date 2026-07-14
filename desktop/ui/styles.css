@@ -85,32 +85,21 @@ button:disabled { opacity: 0.5; }
 .provider-note { margin-top: 10px; font-size: 11px; display: flex; justify-content: space-between; gap: 8px; }
 .setup-link { padding: 0; background: transparent; color: #1478f2; text-decoration: underline; }
 
-.model-breakdown {
-  margin-top: 10px;
+.tier-section {
   padding-top: 10px;
+  margin-top: 10px;
   border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
-.model-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
-  align-items: center;
+.tier-heading {
+  font-weight: 600;
   font-size: 12px;
+  margin-bottom: 6px;
 }
-.model-name { color: var(--muted); }
-.model-pct {
-  font-variant-numeric: tabular-nums;
-  font-weight: 520;
-}
-.model-progress {
-  grid-column: 1 / -1;
+.tier-progress {
   height: 5px;
-  margin-top: 3px;
+  margin-top: 6px;
 }
-.model-progress > div {
+.tier-progress > div {
   height: 100%;
   border-radius: inherit;
   transition: width 180ms ease;

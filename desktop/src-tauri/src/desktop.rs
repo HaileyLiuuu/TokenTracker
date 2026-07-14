@@ -1,5 +1,5 @@
 use crate::{
-    ModelUsage, ProviderId, UsageSnapshot,
+    ModelUsage, ProviderId, UsageSnapshot, UsageWindow,
     service::{AppPaths, UsageService},
 };
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,7 @@ pub struct ProviderView {
     pub failure: Option<String>,
     pub loading: bool,
     pub models: Vec<ModelUsage>,
+    pub session: Option<UsageWindow>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -72,6 +73,7 @@ impl Default for AppViewState {
                     failure: None,
                     loading: true,
                     models: vec![],
+                    session: None,
                 })
                 .collect(),
             refreshing: true,

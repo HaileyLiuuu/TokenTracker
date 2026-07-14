@@ -14,6 +14,7 @@ fn claude_rate_limit_keeps_the_last_real_snapshot_until_its_reset() {
         },
         fetched_at: now,
         models: vec![],
+        session: None,
     };
     let mut cache = ProviderCache::default();
     cache.record_success(snapshot.clone());

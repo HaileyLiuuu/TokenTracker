@@ -87,6 +87,9 @@ pub struct UsageSnapshot {
     /// all-models total and `weekly` above is a copy of it.
     #[serde(default)]
     pub models: Vec<ModelUsage>,
+    /// Session-level window from the `five_hour` key. None for Codex.
+    #[serde(default)]
+    pub session: Option<UsageWindow>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -277,6 +280,7 @@ pub fn parse_codex_usage(
         ),
         fetched_at,
         models: vec![],
+        session: None,
     })
 }
 
@@ -370,6 +374,19 @@ pub fn parse_claude_usage(
             .then_with(|| a.display_name.cmp(&b.display_name))
     });
 
+    // Parse the session-level window from five_hour
+    let session = raw
+        .get("five_hour")
+        .and_then(|v| v.as_object())
+        .and_then(|obj| {
+            let util = obj.get("utilization").and_then(|v| v.as_f64())?;
+            let resets = obj.get("resets_at").and_then(|v| v.as_str())?;
+            let reset_at = DateTime::parse_from_rfc3339(resets)
+                .map(|d| d.with_timezone(&Utc))
+                .ok()?;
+            Some(UsageWindow::new(util, Some(reset_at), Some(300)))
+        });
+
     let primary = models.first().ok_or(UsageError::MissingWeeklyWindow)?;
 
     Ok(UsageSnapshot {
@@ -377,6 +394,7 @@ pub fn parse_claude_usage(
         weekly: primary.weekly.clone(),
         fetched_at,
         models,
+        session,
     })
 }
 

@@ -105,6 +105,7 @@ impl UsageService {
                 local_tokens: None,
                 failure: None,
                 loading: true,
+                session: snapshot.as_ref().and_then(|s| s.session.clone()),
             })
             .collect(),
             refreshing: true,
@@ -180,6 +181,7 @@ impl UsageService {
             display_name: ProviderId::Codex.display_name().to_string(),
             snapshot: snapshot.clone(),
             models,
+            session: None,
             local_tokens,
             failure: result.err().map(|error| failure_code(&error)),
             loading: false,
@@ -207,11 +209,13 @@ impl UsageService {
             .as_ref()
             .map(|s| s.models.clone())
             .unwrap_or_default();
+        let session = snapshot.as_ref().and_then(|s| s.session.clone());
         ProviderView {
             id: ProviderId::Claude,
             display_name: ProviderId::Claude.display_name().to_string(),
             snapshot: snapshot.clone(),
             models,
+            session,
             local_tokens,
             failure: result.err().map(|error| failure_code(&error)),
             loading: false,
