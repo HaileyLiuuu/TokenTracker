@@ -9,7 +9,7 @@ const copy = {
     refresh: "Refresh now", quit: "Quit TokenTracker", providerData: "Provider data",
     updated: "Updated", loading: "Loading…", unavailable: "Unavailable",
     signInCodex: "Sign in to Codex", signInClaude: "Sign in to Claude Code",
-    currentSession: "Current session", currentWeekLabel: "CURRENT WEEK", allModels: "All models",
+    currentSession: "Current session", currentWeekLabel: "CURRENT WEEK", weeklyAllLabel: "Current week (all models)", allModels: "All models",
     refreshLabel: "REFRESH NOW", quitLabel: "QUIT APP"
   },
   "zh-Hans": {
@@ -18,7 +18,7 @@ const copy = {
     refresh: "立即刷新", quit: "退出 TokenTracker", providerData: "服务官方数据",
     updated: "最后更新", loading: "正在读取…", unavailable: "暂不可用",
     signInCodex: "登录 Codex", signInClaude: "登录 Claude Code",
-    currentSession: "当前会话", currentWeekLabel: "本周用量", allModels: "所有模型",
+    currentSession: "当前会话", currentWeekLabel: "本周用量", weeklyAllLabel: "本周用量（所有模型）", allModels: "所有模型",
     refreshLabel: "立即刷新", quitLabel: "退出程序"
   }
 };
@@ -59,7 +59,9 @@ function providerCard(provider, index) {
   const cls = provider.id;
   const name = provider.displayName || (isCodex ? "Codex" : "Claude Code");
   const initial = isCodex ? "C" : "CC";
-  const remaining = provider.snapshot?.weekly?.remainingPercent;
+  // Claude hero = session (five_hour), Codex hero = weekly (seven_day)
+  const heroWindow = (!isCodex && provider.session) ? provider.session : provider.snapshot?.weekly;
+  const remaining = heroWindow?.remainingPercent;
   const pct = remaining != null ? Math.round(remaining) : null;
   const heroPct = pct != null ? pct + "%" : "—";
 
@@ -71,7 +73,7 @@ function providerCard(provider, index) {
 
   let tierHtml = "";
   if (!isCodex && provider.snapshot) {
-    tierHtml += renderTier(t("currentSession"), provider.session, provider.localTokens);
+    tierHtml += renderTier(t("weeklyAllLabel"), provider.snapshot.weekly, provider.localTokens);
     if (provider.models) {
       provider.models.filter(m => m.modelKey !== "").forEach(m => {
         tierHtml += renderTier(m.displayName, m.weekly, provider.localTokens);
@@ -89,7 +91,7 @@ function providerCard(provider, index) {
       <div class="hero-pct">${heroPct}</div>
       <div class="meta-stack">
         <span class="meta-label">${t("resets")}</span>
-        <span class="meta-value">${formatDate(provider.snapshot?.weekly?.resetAt)}</span>
+        <span class="meta-value">${formatDate(heroWindow?.resetAt)}</span>
       </div>
       <div class="hero-label">${isCodex ? t("remaining") : t("currentWeekLabel")}</div>
       <div class="meta-stack">
