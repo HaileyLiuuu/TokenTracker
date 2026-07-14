@@ -340,7 +340,15 @@ pub fn update_tray<R: Runtime>(app: &AppHandle<R>, view: &AppViewState) {
         .iter()
         .find(|item| item.id == provider)
         .and_then(|item| item.snapshot.as_ref())
-        .map(|snapshot| snapshot.weekly.remaining_percent.round().clamp(0.0, 100.0) as u8);
+        .map(|snapshot| {
+            snapshot
+                .session
+                .as_ref()
+                .unwrap_or(&snapshot.weekly)
+                .remaining_percent
+                .round()
+                .clamp(0.0, 100.0) as u8
+        });
     if let Some(tray) = app.tray_by_id("main-tray") {
         let value = remaining
             .map(|value| value.to_string())
