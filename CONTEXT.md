@@ -28,7 +28,16 @@ and Claude Code plan usage visible without opening their deeper usage screens.
 3. Local Codex and Claude logs produce a bounded local-token total without
    decoding, retaining, or transmitting prompt fields.
 4. A Claude usage client reads Keychain credentials at most once per app
-   session unless the user explicitly retries after an authentication failure.
+   session unless the user explicitly retries after an authentication failure,
+   **or the cached credential has expired**. Claude Code rotates its OAuth
+   token in the keychain on expiry, so a cached expired copy must trigger one
+   re-read (`ClaudeCredential::is_usable_at`). Without this, every refresh
+   fails with `LoginExpired`, `load_claude` silently falls back to the
+   last-known-good snapshot, and the panel shows days-old data forever while
+   the keychain holds a perfectly valid token. (Hit in production 2026-07-17:
+   Claude data was 2 days stale while the keychain token had 8 hours left.)
+   The read-once rule exists to stop per-refresh Keychain prompts — re-reading
+   only on expiry costs at most one read per token lifetime (~8h).
 5. Claude usage requests are coalesced and throttled to at most once every
    five minutes. Rate-limit backoff and the last successful snapshot are
    persisted without credentials so an app restart does not blank the UI or

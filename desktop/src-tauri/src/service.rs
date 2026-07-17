@@ -279,7 +279,7 @@ impl UsageService {
                     .ok_or(UsageError::RateLimited);
             }
         }
-        let credential = self.claude_credential()?;
+        let credential = self.claude_credential(now)?;
         if credential.expires_at.is_some_and(|date| date <= now) {
             return Err(UsageError::LoginExpired);
         }
@@ -330,12 +330,17 @@ impl UsageService {
         Ok(snapshot)
     }
 
-    fn claude_credential(&self) -> Result<ClaudeCredential, UsageError> {
+    fn claude_credential(&self, now: DateTime<Utc>) -> Result<ClaudeCredential, UsageError> {
         let mut state = self.claude_credential.lock().expect("Claude credential");
         match &*state {
-            ClaudeCredentialState::Loaded(credential) => return Ok(credential.clone()),
+            // Reuse the cached credential only while it is still valid. Claude Code
+            // rotates this token in the OS keychain when it expires, so holding an
+            // expired copy would fail every refresh until the user manually retried.
+            ClaudeCredentialState::Loaded(credential) if credential.is_usable_at(now) => {
+                return Ok(credential.clone());
+            }
             ClaudeCredentialState::Failed => return Err(UsageError::CredentialMissing),
-            ClaudeCredentialState::Unread => {}
+            _ => {}
         }
         let credential = read_claude_system_credential()
             .or_else(|_| read_claude_file_credential(&self.paths.claude_home));

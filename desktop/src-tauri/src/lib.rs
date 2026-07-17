@@ -171,6 +171,15 @@ pub struct ClaudeCredential {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+impl ClaudeCredential {
+    /// Whether a cached copy of this credential can still be reused at `now`.
+    /// Claude Code rotates the token in the OS keychain when it expires, so an
+    /// expired cached copy must trigger a re-read instead of being reused.
+    pub fn is_usable_at(&self, now: DateTime<Utc>) -> bool {
+        !self.expires_at.is_some_and(|expiry| expiry <= now)
+    }
+}
+
 #[derive(Deserialize)]
 struct CodexCredentialEnvelope {
     tokens: CodexCredentialTokens,
